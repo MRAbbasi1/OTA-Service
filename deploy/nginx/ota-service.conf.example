@@ -1,0 +1,62 @@
+# Host-Nginx virtual host example for a shared server.
+# Replace both OTA hostnames and the certificate directory before enabling.
+# This file intentionally does not listen on port 80 or declare a default server:
+# the existing host Nginx remains the sole owner of public ports 80 and 443.
+
+upstream ota_service_api {
+    server 127.0.0.1:18080;
+    keepalive 32;
+}
+
+server {
+    listen 443 ssl;
+    server_name api.ota-service.example cdn.ota-service.example;
+
+    ssl_certificate /etc/letsencrypt/live/ota-service/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ota-service/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:ota_service_tls:10m;
+    ssl_session_tickets off;
+
+    client_max_body_size 64m;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 900s;
+    proxy_send_timeout 900s;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+
+    location = /health/live {
+        proxy_pass http://ota_service_api;
+    }
+
+    location = /health/ready {
+        proxy_pass http://ota_service_api;
+    }
+
+    # Firmware is authenticated by FastAPI. Never cache or buffer the object:
+    # preserve the exact upstream Content-Length and avoid holding whole images.
+    location /firmware/ {
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_pass http://ota_service_api;
+    }
+
+    # The manifest and administrative API are also identity-sensitive.
+    location / {
+        proxy_cache off;
+        proxy_pass http://ota_service_api;
+    }
+}

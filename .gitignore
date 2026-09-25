@@ -1,0 +1,127 @@
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# Type checking / tooling caches
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# ============================================================
+# Environment / Secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local secrets / certificates / keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+certs/
+
+# ============================================================
+# IDE / Editors / Tooling
+# ============================================================
+
+.vscode/
+.idea/
+*.iml
+.freebuff
+AGENTS.md
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# ============================================================
+# Docker / Local Runtime
+# ============================================================
+
+docker-data/
+docker-volumes/
+*.pid
+
+# Local MinIO / object-storage data
+minio-data/
+storage-data/
+
+# Local database data
+postgres-data/
+postgresql-data/
+
+# ============================================================
+# Logs / Debugging
+# ============================================================
+
+*.log
+logs/
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# ============================================================
+# Generated / Runtime files
+# ============================================================
+
+*.sqlite
+*.sqlite3
+*.db
+
+# ============================================================
+# Firmware / OTA artifacts
+# ============================================================
+
+# Local firmware binaries
+*.bin
+*.elf
+*.map
+*.hex
+
+# OTA signing artifacts
+ota-signing/
+firmware-signing/
+docs/OtaManager.md

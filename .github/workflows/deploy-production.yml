@@ -1,0 +1,96 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set immutable image name
+        id: image
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.image }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.image.outputs.image }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Copy deployment files
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+        run: |
+          ssh "$USER@$HOST" "mkdir -p '$PATH_ON_HOST/deploy/nginx'"
+          scp compose.production.yaml deploy/production-deploy.sh \
+            "$USER@$HOST:$PATH_ON_HOST/"
+          scp deploy/nginx/ota-service.conf.example \
+            "$USER@$HOST:$PATH_ON_HOST/deploy/nginx/"
+          ssh "$USER@$HOST" "chmod 700 '$PATH_ON_HOST/production-deploy.sh'"
+      - name: Deploy and verify readiness
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          IMAGE: ${{ needs.publish.outputs.image }}
+          READINESS_URL: ${{ secrets.PRODUCTION_READINESS_URL }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s\n' "$GHCR_TOKEN" | ssh "$USER@$HOST" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh "$USER@$HOST" \
+            "cd '$PATH_ON_HOST' && OTA_IMAGE='$IMAGE' OTA_READINESS_URL='$READINESS_URL' ./production-deploy.sh '$IMAGE'"

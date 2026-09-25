@@ -1,0 +1,59 @@
+[project]
+name = "ota-service"
+version = "0.1.0"
+description = "OTA-Service firmware update management platform"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "alembic>=1.14,<2.0",
+    "argon2-cffi>=23.1,<26.0",
+    "fastapi>=0.115,<1.0",
+    "minio>=7.2,<8.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "pydantic-settings>=2.7,<3.0",
+    "pyjwt>=2.10,<3.0",
+    "python-multipart>=0.0.20,<1.0",
+    "sqlalchemy>=2.0,<3.0",
+    "uvicorn[standard]>=0.34,<1.0",
+]
+
+[project.scripts]
+# Deployment command: creates the first SUPER_ADMIN from one-time environment
+# credentials, idempotently and with an audit record.
+ota-admin = "app.cli.bootstrap_admin:main"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.0",
+    "mypy>=1.14,<2.0",
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.25,<1.0",
+    "pytest-cov>=6.0,<7.0",
+    "ruff>=0.11,<1.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection pattern requires callables in defaults.
+"app/api/**" = ["B008"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["app"]
+exclude = ["alembic"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+markers = [
+    "integration: requires locally running PostgreSQL and MinIO",
+]
