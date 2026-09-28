@@ -34,7 +34,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ota"
+          --health-cmd "pg_isready -U ota -d ota_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -46,7 +46,7 @@ jobs:
         ports:
           - 9000:9000
         options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-cmd "wget -q --spider http://localhost:9000/minio/health/live || exit 1"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
