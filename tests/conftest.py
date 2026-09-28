@@ -147,9 +147,15 @@ def provision_super_admin(app: object) -> None:
 
 
 def build_app(fake_storage: FakeObjectStorage) -> TestClient:
-    """A started app whose storage is in-memory, so no MinIO is required."""
+    """A started app whose storage is in-memory, so no MinIO is required.
+
+    `raise_server_exceptions=False` so an unhandled error is returned to the
+    caller as an opaque 500, exactly what a real deployment does. Without it
+    Starlette's ServerErrorMiddleware re-raises after sending the response, and
+    the test can never inspect the 500 body.
+    """
     app = create_app()
-    test_client = TestClient(app)
+    test_client = TestClient(app, raise_server_exceptions=False)
     test_client.__enter__()  # runs the lifespan
     app.state.storage = fake_storage
     return test_client

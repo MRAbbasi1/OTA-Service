@@ -214,7 +214,6 @@ def test_minio_failure_response_does_not_leak_internal_details(
         raise RuntimeError(internal_secret)
 
     monkeypatch.setattr(fake_storage, "put_bytes", fail_write)
-    client.raise_server_exceptions = False
     response = client.post(
         "/api/v1/admin/firmware/releases",
         data={"device_type_id": str(device_type.json()["id"]), "version": "2.6.1"},
@@ -235,7 +234,6 @@ def test_database_failure_response_does_not_leak_internal_details(
         raise RuntimeError(internal_secret)
 
     client.app.dependency_overrides[get_session] = fail_session
-    client.raise_server_exceptions = False
     try:
         response = client.get("/api/v1/admin/devices")
     finally:
