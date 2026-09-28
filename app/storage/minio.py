@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from io import BytesIO
 
 from minio import Minio
+from urllib3 import PoolManager, Timeout
 from urllib3.response import BaseHTTPResponse
 
 from app.core.config import Settings
@@ -32,11 +33,19 @@ class MinioObjectStorage:
     def __init__(self, settings: Settings) -> None:
         self.bucket = settings.minio_bucket
         self.region = settings.minio_region
+        http_client = None
+        if settings.minio_secure and settings.minio_ca_cert:
+            http_client = PoolManager(
+                timeout=Timeout(connect=5.0, read=60.0),
+                cert_reqs="CERT_REQUIRED",
+                ca_certs=settings.minio_ca_cert,
+            )
         self.client = Minio(
             settings.minio_endpoint,
             access_key=settings.minio_access_key.get_secret_value(),
             secret_key=settings.minio_secret_key.get_secret_value(),
             secure=settings.minio_secure,
+            http_client=http_client,
         )
 
     def is_healthy(self) -> bool:

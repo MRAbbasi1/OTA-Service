@@ -5,8 +5,7 @@
 ### Secure firmware lifecycle and authenticated OTA delivery for connected devices
 
 <p align="center">
-  <a href="https://github.com/MRAbbasi1/OTA-Service/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MRAbbasi1/OTA-Service/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white&style=flat-square" alt="CI workflow status"></a>&nbsp;
-  <a href="https://github.com/MRAbbasi1/OTA-Service/actions/workflows/deploy-production.yml"><img src="https://img.shields.io/github/actions/workflow/status/MRAbbasi1/OTA-Service/deploy-production.yml?label=Production%20deployment&logo=githubactions&logoColor=white&style=flat-square" alt="Production deployment workflow status"></a>&nbsp;
+  <a href="https://github.com/MRAbbasi1/OTA-Service/actions/workflows/ci-cd.yml"><img src="https://img.shields.io/github/actions/workflow/status/MRAbbasi1/OTA-Service/ci-cd.yml?branch=main&label=CI%2FCD&logo=githubactions&logoColor=white&style=flat-square" alt="CI/CD workflow status"></a>&nbsp;
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white&style=flat-square" alt="Python 3.13"></a>&nbsp;
   <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white&style=flat-square" alt="FastAPI"></a><br>
   <a href="https://www.postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white&style=flat-square" alt="PostgreSQL 18"></a>&nbsp;
@@ -250,10 +249,11 @@ OTA-Service/
 │   ├── services/           # Transactional application services & business operations
 │   └── storage/            # Object storage interfaces & MinIO adapters
 ├── alembic/                # Database migration versions
-├── deploy/                 # Production Nginx virtual hosts & system configuration
+├── deploy/                 # Deploy script, Nginx example, production env template
 ├── docs/                   # Full architectural documentation suite (00 to 16)
 ├── tests/                  # Exhaustive unit, integration, and security test suite
-├── Dockerfile              # Production multi-stage OCI container definition
+├── .github/workflows/      # Single CI/CD pipeline (test → build → push → deploy)
+├── Dockerfile              # Production OCI container definition
 ├── pyproject.toml          # Project configuration, dependencies, and tooling rules
 └── LICENSE                 # Open-Source MIT License
 ```

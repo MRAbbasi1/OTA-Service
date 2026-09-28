@@ -5,10 +5,11 @@
 Production components:
 
 ```text
-existing host Nginx
-OTA-Service API container
-PostgreSQL (managed separately)
-MinIO (managed separately)
+existing host Nginx          (manual, once)
+compose.production.yaml      (GitHub Actions every deploy)
+  ├── postgres
+  ├── minio   (TLS via deploy/certs/generate-minio-tls-material.sh)
+  └── api
 ```
 
 OTA-Service does not claim the shared server's public HTTP/HTTPS ports. The
@@ -191,41 +192,45 @@ health checks
 
 # 8. Docker Compose
 
-The production Compose file manages only the OTA API container. Host Nginx and
-the persistent PostgreSQL and MinIO services remain independently managed:
+Production Compose manages the full application data plane:
 
 ```text
-compose.production.yaml
+compose.production.yaml  →  postgres + minio + api
 ```
 
-The separately managed PostgreSQL and MinIO endpoints must be reachable from
-the API container and must not be exposed to the public Internet. On a
-single-host Docker installation, the production Compose file provides the
-`host.docker.internal` host-gateway alias. When those services run on the host,
-bind them to a private interface reachable from the Docker bridge and use host
-firewall rules to deny public access. Use `host.docker.internal` rather than
-`localhost` in the container's `DATABASE_URL` and `MINIO_ENDPOINT`. If storage
-is remote, configure its private network address and TLS.
+Named volumes `ota-postgres-data` and `ota-minio-data` persist across deploys.
+Never run `docker compose down -v` on production — that deletes fleet data.
+
+Postgres and MinIO publish only on loopback (`127.0.0.1:5432`,
+`127.0.0.1:9000/9001`) for host-side admin access. The API reaches them on the
+private Compose network as hostnames `postgres` and `minio`. Host Nginx remains
+independently managed on the shared server.
 
 ---
 
 # 9. Environment Variables
 
-Production configuration should include:
+Production configuration lives in a host file (default
+`/opt/ota-service/.env`), used by Compose for variable substitution and mounted
+into the API container. Use `deploy/env.production.example` as the template.
+
+Required keys:
 
 ```text
-DATABASE_URL
-DATABASE_POOL_SIZE
-DATABASE_MAX_OVERFLOW
-DATABASE_POOL_TIMEOUT_SECONDS
-MINIO_ENDPOINT
-MINIO_ACCESS_KEY
-MINIO_SECRET_KEY
+POSTGRES_USER
+POSTGRES_PASSWORD
+POSTGRES_DB
+MINIO_ROOT_USER
+MINIO_ROOT_PASSWORD
 MINIO_BUCKET
 OTA_MANIFEST_BASE_URL      # https://api.ota-service.example
 OTA_FIRMWARE_BASE_URL      # https://cdn.ota-service.example
 ADMIN_JWT_SECRET
 ```
+
+Compose sets `DATABASE_URL`, `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`,
+`MINIO_SECRET_KEY`, `MINIO_SECURE`, and `MINIO_CA_CERT` for the API service on
+the private network. GitHub Actions does not create this file.
 
 The backend does not hold the firmware signing private key. Firmware releases
 arrive with a signed manifest, which the device verifies using its embedded
@@ -248,33 +253,75 @@ Application startup should not blindly run destructive migrations.
 
 # 11. Deployment Flow
 
+Automated path (see `docs/14-ci-cd.md`):
+
 ```text
-GitHub
-   |
-Pull Request
-   |
-Tests
-   |
-Build
-   |
-Container Image
-   |
-Registry
-   |
-Production Deployment
-   |
-Migration
-   |
-Health Check
-   |
-Traffic
+PR → quality + image build
+main → quality → GHCR push (SHA tag) → Environment approval → SSH deploy
+     → ensure MinIO TLS certs
+     → start/wait postgres + minio
+     → alembic upgrade → start api → readiness / API-image rollback
 ```
+
+---
+
+# 11.1 First-time host bootstrap (manual, once)
+
+These steps are **not** part of the day-to-day pipeline. Confirm each command
+against the real host before running anything destructive.
+
+PostgreSQL and MinIO are started by GitHub Actions from `compose.production.yaml`.
+You do **not** install them by hand.
+
+```bash
+# 1) Docker Engine + Compose plugin (official Docker docs for your distro)
+
+# 2) Deploy user
+sudo useradd --create-home --shell /bin/bash ota-deploy
+sudo usermod -aG docker ota-deploy
+
+# 3) App directory + env (ONLY manual secret step for the stack)
+sudo mkdir -p /opt/ota-service
+sudo cp deploy/env.production.example /opt/ota-service/.env   # from a local checkout
+sudo chown -R ota-deploy:ota-deploy /opt/ota-service
+sudo chmod 700 /opt/ota-service
+sudo chmod 600 /opt/ota-service/.env
+# Edit .env: POSTGRES_*, MINIO_ROOT_*, ADMIN_JWT_SECRET, OTA_* URLs
+
+# 4) SSH key for GitHub Actions (as ota-deploy)
+ssh-keygen -t ed25519 -f ~/.ssh/ota_gha_deploy -N ''
+cat ~/.ssh/ota_gha_deploy.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+# PRODUCTION_SSH_KEY = private key ; PRODUCTION_KNOWN_HOSTS = ssh-keyscan -H <host>
+
+# 5) Nginx (after first Actions deploy copied the example site)
+sudo cp /opt/ota-service/deploy/nginx/ota-service.conf.example \
+  /etc/nginx/sites-available/ota-service.conf
+sudo nginx -t
+# sudo systemctl reload nginx   # only after nginx -t succeeds
+
+# 6) After first healthy deploy — first admin once:
+# docker compose --env-file .env -f compose.production.yaml run --rm api ota-admin
+```
+
+Day-to-day: merge to `main`. Never `docker compose down -v`.
 
 ---
 
 # 12. Rollback
 
-Application deployment must support rollback to a previous image.
+`deploy/production-deploy.sh` records the last healthy **API** image in
+`.ota-previous-image` and restarts that API image if readiness fails.
+Postgres/MinIO volumes are left untouched.
+
+Manual API rollback:
+
+```bash
+cd /opt/ota-service
+export OTA_IMAGE=ghcr.io/<owner>/ota-service:<previous-sha>
+export OTA_READINESS_URL=http://127.0.0.1:18080/health/ready
+./production-deploy.sh "$OTA_IMAGE"
+```
 
 Database migrations must be designed to minimize destructive rollback requirements.
 

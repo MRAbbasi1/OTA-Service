@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     minio_bucket: str = "ota-firmware"
     minio_region: str = "us-east-1"
     minio_secure: bool = False
+    # PEM CA used to verify MinIO when MINIO_SECURE=true with an internal CA.
+    minio_ca_cert: str | None = None
 
     # Manifest retrieval and firmware delivery are separate public hostnames (see
     # docs/16-update-path-and-publication.md). The manifest host is provisioned on

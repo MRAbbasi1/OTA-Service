@@ -1,14 +1,79 @@
+# Full production stack managed by GitHub Actions deploy:
+#   postgres + minio + api
+# Host Nginx and TLS certificates for public hostnames stay on the host.
+#
+# Secrets live in /opt/ota-service/.env (created once). Volumes persist across deploys.
+# Do not run `docker compose down -v` in production — that destroys data.
+
 services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ota}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-ota}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ota-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-ota} -d ${POSTGRES_DB:-ota}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - private
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ota-minio-data:/data
+      - ${OTA_MINIO_CERT_DIR:-/opt/ota-service/certs/minio}:/root/.minio/certs:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "https://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - private
+
   api:
     image: ${OTA_IMAGE:?OTA_IMAGE is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     env_file:
-      - ${OTA_ENV_FILE:-/opt/ota-service/.env}
+      - ${OTA_ENV_FILE:-.env}
     environment:
       ENVIRONMENT: production
+      # In-stack DNS names — do not use localhost/host.docker.internal here.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ota}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ota}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_SECURE: "true"
+      MINIO_CA_CERT: /etc/ota/certs/ota-minio-ca.crt
     ports:
       - "127.0.0.1:${OTA_BIND_PORT:-18080}:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${OTA_MINIO_CA_CERT:-/opt/ota-service/certs/authority/ota-minio-ca.crt}:/etc/ota/certs/ota-minio-ca.crt:ro
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
@@ -27,10 +92,16 @@ services:
       - --workers
       - "1"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)",
+        ]
       interval: 10s
       timeout: 4s
-      start_period: 15s
+      start_period: 20s
       retries: 6
     networks:
       - private
@@ -38,3 +109,7 @@ services:
 networks:
   private:
     driver: bridge
+
+volumes:
+  ota-postgres-data:
+  ota-minio-data:

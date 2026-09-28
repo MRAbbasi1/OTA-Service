@@ -1,0 +1,311 @@
+name: CI/CD
+
+# Single pipeline:
+#   PR / any branch push that is not main → quality + image build (no push, no deploy)
+#   push to main / manual run on main     → quality → build+push → deploy
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.13"
+  REGISTRY: ghcr.io
+
+jobs:
+  quality:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: ota
+          POSTGRES_PASSWORD: ota
+          POSTGRES_DB: ota_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ota"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      minio:
+        image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+        env:
+          MINIO_ROOT_USER: minio
+          MINIO_ROOT_PASSWORD: miniosecret
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ENVIRONMENT: testing
+      DATABASE_URL: postgresql+psycopg://ota:ota@localhost:5432/ota_test
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: miniosecret
+      OTA_MANIFEST_BASE_URL: https://api.ota-service.example
+      OTA_FIRMWARE_BASE_URL: https://cdn.ota-service.example
+      # CI-only; production refuses this default.
+      ADMIN_JWT_SECRET: ci-only-admin-session-secret-not-a-real-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Show toolchain versions
+        run: |
+          set -euo pipefail
+          echo "### Toolchain" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "python: $(python3 --version 2>/dev/null || true)"
+            echo "uv: $(uv --version)"
+            echo "ref: ${{ github.ref }}"
+            echo "sha: ${{ github.sha }}"
+            echo "event: ${{ github.event_name }}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy app
+
+      - name: Alembic upgrade
+        run: uv run alembic upgrade head
+
+      - name: Bootstrap first administrator (idempotent)
+        env:
+          BOOTSTRAP_ADMIN_EMAIL: ci@ota-service.test
+          BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-password-1
+        run: |
+          set -euo pipefail
+          uv run ota-admin
+          uv run ota-admin
+
+      - name: Pytest with coverage
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+
+      - name: MinIO integration tests
+        env:
+          RUN_MINIO_INTEGRATION: "1"
+        run: uv run pytest -m integration
+
+      - name: Dependency audit
+        run: uvx --from pip-audit pip-audit --requirement <(uv export --locked --no-dev --format requirements-txt)
+
+      - name: Quality summary
+        if: always()
+        run: |
+          echo "### Quality job" >> "$GITHUB_STEP_SUMMARY"
+          echo "- result: **${{ job.status }}**" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build container image
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Decide publish vs local load
+        id: meta
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref }}" == "refs/heads/main" && \
+                ( "${{ github.event_name }}" == "push" || \
+                  "${{ github.event_name }}" == "workflow_dispatch" ) ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "### Image" >> "$GITHUB_STEP_SUMMARY"
+          echo "- tag: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- publish: \`${{ github.ref == 'refs/heads/main' }}\` / event=\`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.meta.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on main)
+        id: push
+        uses: docker/build-push-action@v6
+        env:
+          BUILDKIT_PROGRESS: plain
+        with:
+          context: .
+          push: ${{ steps.meta.outputs.publish == 'true' }}
+          load: ${{ steps.meta.outputs.publish != 'true' }}
+          tags: ${{ steps.meta.outputs.image }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test local image
+        if: steps.meta.outputs.publish != 'true'
+        run: |
+          set -euo pipefail
+          docker run --rm "${{ steps.meta.outputs.image }}" \
+            python -c "import app; print('image import ok')"
+
+  deploy:
+    name: Deploy production
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show deploy context
+        run: |
+          set -euo pipefail
+          echo "### Deploy" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "- image: \`${{ needs.build.outputs.image }}\`"
+            echo "- sha: \`${{ github.sha }}\`"
+            echo "- actor: \`${{ github.actor }}\`"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Copy deployment bundle
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh "$USER@$HOST" "mkdir -p '$PATH_ON_HOST/deploy/nginx' '$PATH_ON_HOST/deploy/certs'"
+          scp compose.production.yaml deploy/production-deploy.sh \
+            "$USER@$HOST:$PATH_ON_HOST/"
+          scp deploy/certs/generate-minio-tls-material.sh \
+            "$USER@$HOST:$PATH_ON_HOST/deploy/certs/"
+          scp deploy/nginx/ota-service.conf.example \
+            "$USER@$HOST:$PATH_ON_HOST/deploy/nginx/"
+          scp deploy/env.production.example \
+            "$USER@$HOST:$PATH_ON_HOST/deploy/"
+          ssh "$USER@$HOST" \
+            "chmod 700 '$PATH_ON_HOST/production-deploy.sh' \
+             '$PATH_ON_HOST/deploy/certs/generate-minio-tls-material.sh'"
+
+      - name: Pull image, start stack, migrate, verify
+        id: deploy
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          READINESS_URL: ${{ secrets.PRODUCTION_READINESS_URL }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GHCR_TOKEN" | ssh "$USER@$HOST" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh "$USER@$HOST" \
+            "cd '$PATH_ON_HOST' && \
+             DEPLOY_PATH='$PATH_ON_HOST' \
+             OTA_IMAGE='$IMAGE' \
+             OTA_READINESS_URL='$READINESS_URL' \
+             ./production-deploy.sh '$IMAGE'"
+
+      - name: Collect remote diagnostics on failure
+        if: failure()
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          {
+            echo "=== docker compose ps ==="
+            ssh "$USER@$HOST" "cd '$PATH_ON_HOST' && docker compose --env-file '$PATH_ON_HOST/.env' -f compose.production.yaml ps -a" || true
+            echo "=== api / postgres / minio logs (last 200) ==="
+            ssh "$USER@$HOST" "cd '$PATH_ON_HOST' && docker compose --env-file '$PATH_ON_HOST/.env' -f compose.production.yaml logs --no-color --tail=200 api postgres minio" || true
+            echo "=== previous image state ==="
+            ssh "$USER@$HOST" "cd '$PATH_ON_HOST' && cat .ota-previous-image 2>/dev/null || echo '(none)'" || true
+          } | tee diagnostics/deploy-failure.txt
+
+      - name: Upload deploy diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Log out of GHCR on host
+        if: always()
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+        run: |
+          set -euo pipefail
+          # Best-effort cleanup of the short-lived GITHUB_TOKEN login.
+          if [[ -n "${HOST:-}" && -n "${USER:-}" && -f ~/.ssh/id_ed25519 ]]; then
+            ssh "$USER@$HOST" "docker logout ghcr.io" || true
+          fi
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          echo "### Deploy result" >> "$GITHUB_STEP_SUMMARY"
+          echo "- status: **${{ job.status }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- image: \`${{ needs.build.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
