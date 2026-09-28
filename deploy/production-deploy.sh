@@ -106,13 +106,26 @@ log "pulling API image"
 docker pull "$OTA_IMAGE"
 
 log "starting postgres + minio and waiting until healthy (volumes preserved)"
-compose up -d --no-build --wait --remove-orphans postgres minio
+compose up -d --no-build --remove-orphans postgres minio
 
 log "running migrations"
 compose run --rm --no-deps api alembic upgrade head
 
 log "starting api"
 compose up -d --no-build --remove-orphans api
+
+log "waiting for MinIO to accept connections"
+for attempt in $(seq 1 30); do
+  if curl -fsS --max-time 2 http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+    log "MinIO ready after ${attempt}s"
+    break
+  fi
+  if [[ "$attempt" == "30" ]]; then
+    err "MinIO did not become ready in 30s"
+    exit 1
+  fi
+  sleep 1
+done
 
 wait_ready "deploy"
 

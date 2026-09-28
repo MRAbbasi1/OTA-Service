@@ -44,12 +44,6 @@ services:
     volumes:
       - ota-minio-data:/data
       - ${OTA_MINIO_CERT_DIR:-/opt/ota-service/certs/minio}:/root/.minio/certs:ro
-    healthcheck:
-      test: ["CMD", "curl", "-fk", "https://127.0.0.1:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
     networks:
       - private
 
@@ -59,7 +53,7 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - ${OTA_ENV_FILE:-.env}
     environment:

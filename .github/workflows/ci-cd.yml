@@ -45,11 +45,6 @@ jobs:
           MINIO_ROOT_PASSWORD: miniosecret
         ports:
           - 9000:9000
-        options: >-
-          --health-cmd "wget -q --spider http://localhost:9000/minio/health/live || exit 1"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
       ENVIRONMENT: testing
       DATABASE_URL: postgresql+psycopg://ota:ota@localhost:5432/ota_test
@@ -92,6 +87,19 @@ jobs:
 
       - name: Mypy
         run: uv run mypy app
+
+      - name: Wait for MinIO
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+              echo "MinIO ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "MinIO did not become ready in 30s" >&2
+          exit 1
 
       - name: Alembic upgrade
         run: uv run alembic upgrade head
