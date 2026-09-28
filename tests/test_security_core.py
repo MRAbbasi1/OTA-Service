@@ -35,6 +35,18 @@ from app.core.security import (
 from app.db.models import AdminRole
 from app.domain.errors import DomainError
 
+@pytest.fixture(autouse=True)
+def _clean_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CI sets these at the job level; config tests must see the template defaults."""
+    for name in (
+        "ADMIN_JWT_SECRET",
+        "ENVIRONMENT",
+        "ADMIN_COOKIE_SECURE",
+        "MINIO_SECURE",
+        "APP_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
 SECRET = "a-test-signing-secret-of-at-least-32-chars"
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
 

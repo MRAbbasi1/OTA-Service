@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
@@ -89,6 +90,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=runtime_settings.app_version,
         lifespan=lifespan,
     )
+
+    @app.exception_handler(Exception)
+    async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Never leak an internal error to a client.
+
+        This handler runs inside Starlette's ExceptionMiddleware, which sits
+        *inside* ServerErrorMiddleware. Registering a handler for `Exception`
+        therefore converts the error into a normal response before the outer
+        middleware sees it, so nothing is re-raised, nothing is propagated to
+        the test client, and no traceback reaches the caller.
+
+        The exception is logged once here with its request id and type; the
+        client receives an opaque 500 with a stable, machine-readable code.
+        """
+        logger.exception(
+            "unhandled_exception",
+            extra={
+                "extra_fields": {
+                    "request_id": getattr(request.state, "request_id", None),
+                    "path": request.url.path,
+                    "method": request.method,
+                    "exception_type": type(exc).__name__,
+                },
+            },
+        )
+        return JSONResponse(status_code=500, content={"code": "internal_error"})
+
     app.add_middleware(RequestLoggingMiddleware)
     # Probes first: unauthenticated by design (app/api/v1/health.py).
     app.include_router(health_router)
