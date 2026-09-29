@@ -47,7 +47,7 @@ if ((present > 0)); then
 fi
 
 umask 077
-install -d -m 0700 "${AUTHORITY_DIR}"
+install -d -m 0755 "${AUTHORITY_DIR}"
 install -d -m 0750 "${MINIO_DIR}"
 
 openssl req -x509 -newkey rsa:3072 -nodes -days "${CA_DAYS}" -sha256 \
@@ -117,7 +117,7 @@ rm -f "${AUTHORITY_DIR}/minio.csr" "${AUTHORITY_DIR}/minio-cert.cnf" \
   "${AUTHORITY_DIR}/ota-minio-ca.srl"
 
 # MinIO serves public.crt; keep the CA readable for the API container mount.
-chmod 0640 "${LEAF_CERT}" "${CA_CERT}"
+chmod 0644 "${LEAF_CERT}" "${CA_CERT}"
 chmod 0600 "${LEAF_KEY}" "${CA_KEY}"
 
 echo "Created a new MinIO certificate authority and server certificate in ${CERT_ROOT}."
