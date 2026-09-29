@@ -109,7 +109,7 @@ log "starting postgres + minio and waiting until healthy (volumes preserved)"
 compose up -d --no-build --remove-orphans postgres minio
 
 log "running migrations"
-compose run --rm --no-deps api alembic upgrade head
+compose run --rm api alembic upgrade head
 
 log "starting api"
 compose up -d --no-build --remove-orphans api
