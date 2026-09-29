@@ -122,7 +122,7 @@ jobs:
         run: uv run pytest -m integration
 
       - name: Dependency audit
-        run: uvx --from pip-audit pip-audit --requirement <(uv export --locked --no-dev --format requirements-txt)
+        run: uvx --from pip-audit pip-audit --requirement <(uv export --locked --no-dev --no-emit-project --format requirements-txt)
 
       - name: Quality summary
         if: always()
