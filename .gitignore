@@ -50,8 +50,6 @@ coverage.xml
 *.p12
 *.pfx
 secrets/
-certs/
-!deploy/certs/generate-minio-tls-material.sh
 
 # ============================================================
 # IDE / Editors / Tooling
