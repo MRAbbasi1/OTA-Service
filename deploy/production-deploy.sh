@@ -6,9 +6,9 @@
 set -euo pipefail
 
 IMAGE_TAG="${1:?usage: production-deploy.sh <immutable-api-image-tag>}"
-COMPOSE_FILE="${COMPOSE_FILE:-compose.production.yaml}"
-STATE_FILE="${STATE_FILE:-.ota-previous-image}"
 DEPLOY_PATH="${DEPLOY_PATH:-$(pwd)}"
+COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_PATH}/compose.production.yaml}"
+STATE_FILE="${STATE_FILE:-${DEPLOY_PATH}/.ota-previous-image}"
 ENV_FILE="${OTA_ENV_FILE:-${DEPLOY_PATH}/.env}"
 READINESS_URL="${OTA_READINESS_URL:?OTA_READINESS_URL is required}"
 CERT_SCRIPT="${CERT_SCRIPT:-${DEPLOY_PATH}/deploy/certs/generate-minio-tls-material.sh}"
