@@ -114,9 +114,11 @@ compose run --rm api alembic upgrade head
 log "starting api"
 compose up -d --no-build --remove-orphans api
 
-log "waiting for MinIO to accept connections"
+log "waiting for MinIO to accept connections (https, internal cert)"
+MINIO_CA="${DEPLOY_PATH}/certs/authority/ota-minio-ca.crt"
 for attempt in $(seq 1 30); do
-  if curl -fsS --max-time 2 http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+  if curl -fsS --max-time 2 --cacert "${MINIO_CA}" \
+       https://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
     log "MinIO ready after ${attempt}s"
     break
   fi
