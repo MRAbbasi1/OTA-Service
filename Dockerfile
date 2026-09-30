@@ -15,7 +15,7 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 
-RUN uv sync --frozen --no-dev && \
+RUN uv pip install --no-deps --editable . && \
     useradd --create-home --uid 10001 appuser && \
     chown -R appuser:appuser /app
 
