@@ -1,12 +1,12 @@
 # OTA Management Platform — Device Management
 
-## 1. Purpose
+## Purpose
 
 Device Management provides lifecycle management for all physical Smart Controller devices registered in the OTA platform.
 
 ---
 
-# 2. Device Lifecycle
+# Device Lifecycle
 
 Canonical lifecycle:
 
@@ -29,7 +29,7 @@ PROVISIONED
 
 ---
 
-# 3. Device Registration
+# Device Registration
 
 Required fields:
 
@@ -71,7 +71,7 @@ Location/customer fields may be introduced only when required by the business do
 
 ---
 
-# 4. Uniqueness
+# Uniqueness
 
 The following must be unique:
 
@@ -84,7 +84,7 @@ A single raw eFuse MAC must never belong to multiple active devices.
 
 ---
 
-# 5. Authentication Credential
+# Authentication Credential
 
 Device credentials must be independently managed.
 
@@ -102,7 +102,7 @@ Token plaintext must not be stored permanently.
 
 ---
 
-# 6. Device Authentication Flow
+# Device Authentication Flow
 
 ```text
 Request
@@ -144,8 +144,9 @@ Authenticated ACTIVE device + OTA disabled, policy blocked, or no eligible relea
 
 The path case is a no-offer response rather than 403: entitlement is decided
 against the device's own device type, so a wrong path cannot grant access, and
-using 403 would silence a misconfigured device for up to 24 hours. See
-`docs/16-update-path-and-publication.md` §10.3.
+using 403 would silence a misconfigured device for up to 24 hours. See "Path
+identity must match the authenticated device" in
+`docs/16-update-path-and-publication.md`.
 
 The exact matrix, including the 24-hour lockout consequence of 403 and the
 404 no-offer cases for OTA-disabled devices and policy/release decisions, is
@@ -153,7 +154,7 @@ defined in `docs/15-implementation-decisions.md`.
 
 ---
 
-# 7. Device State
+# Device State
 
 The dashboard shall display:
 
@@ -176,7 +177,7 @@ as `ota_enabled`. These concepts must not be collapsed into one boolean.
 
 ---
 
-# 8. Firmware State
+# Firmware State
 
 The device record may maintain a known firmware version only with its source
 (`ADMIN_ASSERTED` or future `DEVICE_REPORTED`) and observation time.
@@ -204,7 +205,7 @@ be treated as confirmation that the device installed or booted it.
 
 ---
 
-# 9. Device Detail
+# Device Detail
 
 Device detail should expose:
 
@@ -255,7 +256,7 @@ Firmware operations
 
 ---
 
-# 10. Device Deletion
+# Device Deletion
 
 Physical device deletion should not normally mean hard deletion.
 
@@ -275,7 +276,7 @@ Hard deletion should be restricted to exceptional administrative operations.
 
 ---
 
-# 11. Device Import
+# Device Import
 
 Future functionality may support bulk device provisioning.
 
@@ -291,7 +292,7 @@ This is not required for initial implementation but the domain should support it
 
 ---
 
-# 12. Device Search
+# Device Search
 
 The dashboard shall support search by:
 
@@ -305,7 +306,7 @@ status
 
 ---
 
-# 13. Device Security Rules
+# Device Security Rules
 
 The system must prevent:
 
@@ -317,7 +318,7 @@ The system must prevent:
 
 ---
 
-# 14. Provisioning Consideration
+# Provisioning Consideration
 
 Factory provisioning must use the same raw eFuse MAC definition expected by `OtaManager`.
 
@@ -340,7 +341,7 @@ Publishing makes a release available for the next device poll; a local device
 operator may trigger `requestManualCheck()`.
 
 The complete provisioning checklist — including the exact `OTA_ONLINE_URL`
-pattern per device type and the failure mode of a wrong value — is
-`docs/16-update-path-and-publication.md` §11. Device onboarding is only complete
+pattern per device type and the failure mode of a wrong value — is in
+"Provisioning Checklist" in `docs/16-update-path-and-publication.md`. Device onboarding is only complete
 when the device has successfully requested its manifest URL and the platform has
 recorded the check.

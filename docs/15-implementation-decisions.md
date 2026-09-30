@@ -1,6 +1,6 @@
 # OTA Management Platform — Implementation Decisions
 
-## 1. Purpose and Status
+## Purpose and Status
 
 This document records the cross-document ambiguities resolved during
 implementation. It is authoritative for the decisions below and does not change
@@ -8,7 +8,7 @@ the current firmware protocol.
 
 ---
 
-## 2. OTA Route and Wire Contract
+## OTA Route and Wire Contract
 
 The canonical OTA routes for this platform are:
 
@@ -18,15 +18,15 @@ GET https://cdn.ota-service.example/firmware/{device_type}/{platform}/v{version}
 ```
 
 These match the device-side documentation's own wire example and reference
-manifest URL (`docs/OtaManager.md` §10). Both hostnames terminate on the same
+manifest URL ("Server & Deployment Contract" in `docs/OtaManager.md`). Both hostnames terminate on the same
 Nginx and the same FastAPI application; `cdn.ota-service.example` is a delivery
 hostname of our application, not a static file server and never MinIO.
 
 The manifest route is provisioned on each device in NVS as `OTA_ONLINE_URL`;
 the firmware route is never provisioned and is taken from the signed manifest
 `url` field. Neither endpoint may redirect: the device client does not follow
-`3xx`, which would instead consume its retry/backoff budget
-(`docs/OtaManager.md` §8.A).
+`3xx`, which would instead consume its retry/backoff budget ("Automatic Retry,
+Non-Retryable Abort, & Backoff" in `docs/OtaManager.md`).
 
 `{device_type}` is `device_types.code` and `{platform}` is
 `device_types.platform`; the release inherits both from its device type, so
@@ -48,7 +48,7 @@ before cutover and either migrated or supported explicitly.
 
 ---
 
-## 3. Canonical Device Identity
+## Canonical Device Identity
 
 `X-Device-Serial` is the decimal ASCII representation of a positive integer.
 The database stores its canonical decimal string (`^[1-9][0-9]*$`); leading
@@ -65,7 +65,7 @@ is the raw eFuse MAC sent by `OtaManager`, never the Ethernet network MAC.
 
 ---
 
-## 4. Device Lifecycle and Entitlement
+## Device Lifecycle and Entitlement
 
 The `Device` model uses both:
 
@@ -96,8 +96,9 @@ The fourth row is deliberately not `403`. Authorization is always decided
 against the authenticated identity's own device type, so a mismatched path
 cannot grant access to another device type's firmware. Using `404` avoids
 locking a misprovisioned device out of automatic checks for 24 hours because of
-a path typo in its NVS configuration (`docs/OtaManager.md` §4.1 warns against
-this), and it is the device's own documented meaning for a non-existent target.
+a path typo in its NVS configuration ("Hardware-Bound Authentication & Anti-Spam
+Lockout" in `docs/OtaManager.md` warns against this), and it is the device's own
+documented meaning for a non-existent target.
 
 There is no special successful wire response for “no update.” A 404 in the
 fourth row is an explicitly chosen platform no-offer response, not a claim
@@ -108,7 +109,7 @@ release is actually allowed for that device.
 
 ---
 
-## 5. Firmware Version Knowledge and Update Attempts
+## Firmware Version Knowledge and Update Attempts
 
 The current OTA GET contract sends no running firmware version and includes no
 post-reboot callback. Therefore the backend must not infer that an installation
@@ -145,7 +146,7 @@ installed-and-booted state until a future device report contract exists.
 
 ---
 
-## 6. Firmware Release and Version Rules
+## Firmware Release and Version Rules
 
 The sole release lifecycle is:
 
@@ -192,14 +193,16 @@ checked as a whole. With the canonical host and filename the fixed overhead is
 55 characters, so `len(code) + len(platform) + len(version) <= 40`. Device-type
 creation additionally reserves version space by requiring
 `len(code) + len(platform) <= 29`. The arithmetic, the rejection codes, and the
-worked boundary cases are in `docs/16-update-path-and-publication.md` §5.
+worked boundary cases are in "Firmware URL Length Budget" in
+`docs/16-update-path-and-publication.md`.
 
 The C++ implementation signs the payload with the signing private key. The
 device, not the server, is the verifier: it holds the public key embedded as
 `ota_public_key.h` and is the only party the contract requires to verify
-(`docs/OtaManager.md` §§6–7). The server contract in the same document requires
-only the manifest key set and an exact `Content-Length`, and its reference
-implementations do not verify anything.
+("Manifest Signature — Trust Model" and "HTTPS / TLS Support" in
+`docs/OtaManager.md`). The server contract in the same document requires only the
+manifest key set and an exact `Content-Length`, and its reference implementations
+do not verify anything.
 
 The platform therefore supports both models:
 
@@ -224,7 +227,7 @@ blocker.
 
 ---
 
-## 7. Rate Limiting
+## Rate Limiting
 
 Rate limiting returns `429 Too Many Requests`, never 403. The current firmware
 treats 429 as a non-retryable response for that poll; limits must therefore
@@ -256,7 +259,7 @@ responses.
 
 ---
 
-## 8. Administrative Access and Provisioning
+## Administrative Access and Provisioning
 
 The first `SUPER_ADMIN` is created only by an audited, idempotent deployment
 CLI command using one-time environment-provided bootstrap credentials. The
@@ -297,7 +300,7 @@ become a production signing key.
 
 ---
 
-## 9. Operational Limitations and Verification
+## Operational Limitations and Verification
 
 The server cannot push or force an update with the current device protocol.
 It can publish an eligible release; the device receives it on its next poll or
@@ -311,13 +314,14 @@ ESP32-S3 end-to-end update remains the final OTA-ready acceptance criterion.
 
 ---
 
-## 10. Update Policy Resolution
+## Update Policy Resolution
 
 Policy rules live in `app/domain/policy.py` and policy rows in
 `app/services/policies.py`; `UpdateDecisionService` is the only caller that turns
 them into a decision, and the dashboard preview calls the same service.
 
-Scopes and their precedence are unchanged (`docs/07-update-policy.md` §3):
+Scopes and their precedence are unchanged ("Policy Scope" in
+`docs/07-update-policy.md`):
 `device` > `device_type` > `global`. Four rules make that deterministic:
 
 | Situation                                                                 | Behaviour                                                                             |
@@ -346,9 +350,10 @@ streaming, and a refusal is a `404 POLICY_BLOCKED`, not a `403`.
 **`allow_downgrade` is not modelled.** The firmware installs only a strictly
 newer version, so the flag could never do anything except mislead an operator; a
 pin below the known version produces `NO_UPDATE`, never an offer
-(`docs/07-update-policy.md` §7).
+("Downgrade" in `docs/07-update-policy.md`).
 
-**Decision reason values** are the documented set (`docs/07` §12) plus
+**Decision reason values** are the documented set ("Decision Reasons" in
+`docs/07-update-policy.md`) plus
 `DEVICE_TYPE_MISMATCH` for a path naming another device type, and
 `POLICY_BLOCKED` for a policy that removes every eligible release, for a pin to a
 version that is not currently published, and for an ambiguous configuration.
@@ -358,7 +363,7 @@ inventing a second reason value.
 
 ---
 
-## 11. Implementation Impact
+## Implementation Impact
 
 These decisions affect the requirements, domain model, OTA/admin API,
 database, tests, and deployment configuration.

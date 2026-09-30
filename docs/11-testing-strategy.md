@@ -1,19 +1,19 @@
 # OTA Management Platform — Testing Strategy
 
-## 1. Testing Objectives
+## Testing Objectives
 
 Testing must verify:
 
-* business correctness
-* OTA compatibility
-* security
-* storage integrity
-* policy correctness
-* production behavior
+- business correctness
+- OTA compatibility
+- security
+- storage integrity
+- policy correctness
+- production behavior
 
 ---
 
-# 2. Test Layers
+# Test Layers
 
 ```text
 Unit Tests
@@ -26,7 +26,7 @@ End-to-End Tests
 
 ---
 
-# 3. Unit Tests
+# Unit Tests
 
 Pure domain logic must be tested without HTTP or MinIO.
 
@@ -42,7 +42,7 @@ Release selection
 
 ---
 
-# 4. Policy Test Matrix
+# Policy Test Matrix
 
 Test:
 
@@ -64,7 +64,7 @@ Downgrade metadata cannot cause a current-firmware offer
 
 ---
 
-# 5. Version Tests
+# Version Tests
 
 Examples:
 
@@ -83,7 +83,7 @@ that exceeds the firmware JSON budget.
 
 ---
 
-# 6. Device Authentication Tests
+# Device Authentication Tests
 
 Test:
 
@@ -101,7 +101,7 @@ Expected HTTP semantics must be verified.
 
 ---
 
-# 7. OTA Contract Tests
+# OTA Contract Tests
 
 The tests must validate the exact current device contract.
 
@@ -125,7 +125,7 @@ no Location/redirect on either OTA endpoint
 
 ---
 
-# 7.1 Update Path Tests
+## Update Path Tests
 
 The path model in `docs/16-update-path-and-publication.md` must be tested
 directly, because every device URL is derived rather than stored.
@@ -146,7 +146,7 @@ traversal attempts in each path segment (.. %2e%2e, encoded slashes, absolute pa
 
 ---
 
-# 7.2 Publication Tests
+## Publication Tests
 
 Test the upload-and-publish gate:
 
@@ -168,7 +168,7 @@ object key equals the derived key for the release
 
 ---
 
-# 8. Signature Tests
+# Signature Tests
 
 Given:
 
@@ -182,9 +182,9 @@ size
 the generated signature must be verifiable using the public key expected by the firmware.
 
 Where the pipeline signs and the platform only stores and serves the bytes, this
-is guarded today by structural checks plus the fixed manifest documented in
-`docs/OtaManager.md` §10 as a vector for the exact key set, the exact signed
-payload format, and the DER signature encoding.
+is guarded today by structural checks plus the fixed manifest published in the
+server and deployment contract of `docs/OtaManager.md`, used as a vector for the
+exact key set, the exact signed payload format, and the DER signature encoding.
 
 A fixed conformance vector built from the production `ota_public_key.h` is the
 strongly recommended regression guard **before the backend generates signatures
@@ -206,7 +206,7 @@ must invalidate the signature.
 
 ---
 
-# 9. MinIO Integration Tests
+# MinIO Integration Tests
 
 Test:
 
@@ -223,7 +223,7 @@ Published artifact immutability must also be tested.
 
 ---
 
-# 10. PostgreSQL Integration Tests
+# PostgreSQL Integration Tests
 
 Test:
 
@@ -239,7 +239,7 @@ pagination
 
 ---
 
-# 11. API Tests
+# API Tests
 
 Use HTTP client tests against FastAPI.
 
@@ -257,7 +257,7 @@ filtering
 
 ---
 
-# 12. Security Tests
+# Security Tests
 
 The security verification matrix, exact regression tests, and limitations are
 tracked in `docs/17-security-verification.md`. At minimum, the suite must prove:
@@ -281,7 +281,7 @@ live Nginx endpoint and inspect actual response headers.
 
 ---
 
-# 13. Firmware Download Tests
+# Firmware Download Tests
 
 Verify:
 
@@ -299,7 +299,7 @@ Certificate chain terminating at the pinned Root CA in the integration environme
 
 ---
 
-# 14. Failure Tests
+# Failure Tests
 
 Simulate:
 
@@ -315,7 +315,7 @@ Signing failure
 
 ---
 
-# 15. End-to-End OTA Test
+# End-to-End OTA Test
 
 The most valuable integration test should reproduce:
 
@@ -341,7 +341,7 @@ Artifact streaming
 
 ---
 
-# 16. Regression Testing
+# Regression Testing
 
 Any change to:
 
@@ -362,7 +362,7 @@ contract and path test set.
 
 ---
 
-# 17. Coverage
+# Coverage
 
 Coverage should be measured, but coverage percentage alone must not be treated as correctness.
 
@@ -370,7 +370,7 @@ Critical domain services should have comprehensive branch coverage.
 
 ---
 
-# 18. CI Testing
+# CI Testing
 
 Every pull request should run:
 

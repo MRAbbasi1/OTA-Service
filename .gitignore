@@ -124,3 +124,13 @@ logs/
 ota-signing/
 firmware-signing/
 docs/OtaManager.md
+
+# ============================================================
+# Local operator files — never commit
+# ============================================================
+
+# Real IPs, hostnames, usernames, ports, and paths for one deployment.
+.local/
+*.local.md
+OPERATIONS.local.md
+INSTANCE.md

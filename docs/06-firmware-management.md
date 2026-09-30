@@ -1,12 +1,12 @@
 # OTA Management Platform — Firmware Management
 
-## 1. Purpose
+## Purpose
 
 Firmware Management controls the complete lifecycle of firmware artifacts and releases.
 
 ---
 
-# 2. Artifact vs Release
+# Artifact vs Release
 
 A release is a logical version.
 
@@ -31,7 +31,7 @@ expressed three ways. The normative model is
 
 ---
 
-# 3. Upload Process
+# Upload Process
 
 The administrator uploads the binary **and the manifest together**. The manifest
 is parsed so that its values are recorded in the database and the storage layout
@@ -69,15 +69,15 @@ Audit event
 Release is UPLOADED -> VALIDATED -> DRAFT
 ```
 
-The full procedure, including every rejection code, is
-`docs/16-update-path-and-publication.md` §8. The binary and the manifest are
+The full procedure, including every rejection code, is in "Publication Procedure"
+in `docs/16-update-path-and-publication.md`. The binary and the manifest are
 uploaded together precisely so the platform can reject a manifest whose signed
 fields disagree with the bytes it was handed, rather than publishing a pairing
 that no device can install.
 
 ---
 
-# 4. MinIO Storage
+# MinIO Storage
 
 Firmware binaries and their manifests are stored in MinIO.
 
@@ -107,7 +107,7 @@ ota-firmware/
 
 ---
 
-# 5. Object Naming
+# Object Naming
 
 Object keys must be deterministic and must mirror the public URL path, so that a
 key can be reconstructed from a logged URL and vice versa.
@@ -123,12 +123,12 @@ firmware/{device_type}/{platform}/v{version}/manifest.json
 `{version}` carries the `v` prefix here and in the URL, but never in the
 manifest `version` field or in the signed payload. Every key segment must pass
 the path parameter validators before it is used; keys must never be built by
-concatenating unvalidated request data. See
-`docs/16-update-path-and-publication.md` §§3 and 6.
+concatenating unvalidated request data. See "Path Parameter Model" and "Storage
+Layout" in `docs/16-update-path-and-publication.md`.
 
 ---
 
-# 6. Checksums
+# Checksums
 
 The backend calculates:
 
@@ -143,7 +143,7 @@ SHA-256 is used for backend-side integrity and operational verification.
 
 ---
 
-# 7. Release States
+# Release States
 
 ```text
 UPLOADED
@@ -156,13 +156,13 @@ ARCHIVED
 
 ---
 
-# 8. Uploaded
+# Uploaded
 
 The binary exists but has not yet completed validation.
 
 ---
 
-# 9. Validated
+# Validated
 
 The artifact has passed:
 
@@ -176,7 +176,7 @@ device-type compatibility checks
 
 ---
 
-# 10. Draft
+# Draft
 
 Release metadata can be reviewed and edited.
 
@@ -184,7 +184,7 @@ It is not available to devices.
 
 ---
 
-# 11. Published
+# Published
 
 A published release becomes eligible for OTA.
 
@@ -192,7 +192,7 @@ Publishing should be an explicit administrative action.
 
 ---
 
-# 12. Deprecated
+# Deprecated
 
 The release remains historically valid but should no longer be selected as the normal latest release.
 
@@ -200,13 +200,13 @@ Existing pinned devices may still use it if policy permits.
 
 ---
 
-# 13. Archived
+# Archived
 
 The release is retained for historical purposes but is not normally eligible for new OTA delivery.
 
 ---
 
-# 14. Immutability
+# Immutability
 
 After publication, the following are immutable:
 
@@ -223,7 +223,7 @@ Release notes may be restricted or also made immutable depending on audit requir
 
 ---
 
-# 15. Firmware Validation
+# Firmware Validation
 
 Before publication:
 
@@ -248,9 +248,10 @@ If this deployment configures the firmware public key, the signature verifies
 MinIO objects written at the derived keys and verified readable
 ```
 
-Rejection codes are enumerated in `docs/16-update-path-and-publication.md` §8.
+Rejection codes are enumerated in "Publication Procedure" in
+`docs/16-update-path-and-publication.md`.
 
-## 15.1 Who verifies the signature
+## Who verifies the signature
 
 The signing key belongs to the **release pipeline**, not to this service: the
 pipeline produces the manifest and its signature from the binary, and the
@@ -259,10 +260,11 @@ re-signs a release it did not author, so it does not need the signing private
 key and, in the normal deployment, does not need the public key either.
 
 `docs/OtaManager.md` requires the public key on the **device** only: the device
-holds it embedded and performs the verification (§§6–7). The server contract
-(§10) requires only that both endpoints validate the device headers and return
-the manifest keys and an exact `Content-Length` — it does not require the server
-to verify the manifest signature.
+holds it embedded and performs the verification, as described in "Manifest
+Signature — Trust Model" and "HTTPS / TLS Support". Its server contract, "Server
+& Deployment Contract", requires only that both endpoints validate the device
+headers and return the manifest keys and an exact `Content-Length`; it does not
+require the server to verify the manifest signature.
 
 Server-side verification is therefore an **optional deployment guard**, useful
 for catching a manifest signed by the wrong key or environment before it reaches
@@ -271,11 +273,12 @@ becomes mandatory and a failing signature is rejected; when it does not, the
 manifest is stored with `signature_verified = false`, the difference between
 "not independently checked" and "invalid" is preserved, and the audit trail
 shows it. The field verification that actually matters is a real device
-installing a real release (see `docs/13-deployment.md` production acceptance criteria).
+installing a real release, which is a production acceptance test rather than an
+automated one.
 
 ---
 
-# 16. Release Compatibility
+# Release Compatibility
 
 A release belongs to a specific device type.
 
@@ -299,7 +302,7 @@ own release list without any code change.
 
 ---
 
-# 17. Firmware Download
+# Firmware Download
 
 The firmware endpoint shall:
 
@@ -315,13 +318,13 @@ The firmware endpoint shall:
 A `DEPRECATED` release is deliberately still deliverable by exact version: it is
 no longer selected as the normal latest release, but a device that already holds
 a signed manifest must be able to finish that download, and pinned devices may
-still use it (§12). An `ARCHIVED` release is not delivered. The object length is
+still use it, as described under "Deprecated". An `ARCHIVED` release is not delivered. The object length is
 checked against the signed `size` before any byte is written, and a disagreement
 is a `5xx` (retryable) rather than a served binary the device would reject.
 
 ---
 
-# 18. No Direct Public Bucket Access
+# No Direct Public Bucket Access
 
 The MinIO bucket should not be publicly writable.
 
@@ -330,7 +333,7 @@ route. MinIO remains private and is not a device-facing endpoint.
 
 ---
 
-# 19. Future Storage Optimization
+# Future Storage Optimization
 
 Possible future extensions include:
 
@@ -345,7 +348,7 @@ without changing the logical FirmwareRelease domain.
 
 ---
 
-# 20. Release Operations
+# Release Operations
 
 Dashboard operations:
 

@@ -1,6 +1,6 @@
 # OTA Management Platform — Project Overview
 
-## 1. Purpose
+## Purpose
 
 OTA-Service is a backend and management system for securely managing firmware
 updates for connected devices.
@@ -24,7 +24,7 @@ The platform is designed around the existing ESP32-S3 `OtaManager` implementatio
 
 ---
 
-## 2. Current Device OTA Contract
+## Current Device OTA Contract
 
 The existing device periodically requests a firmware manifest over Ethernet,
 from the absolute URL provisioned on it as `OTA_ONLINE_URL`. The platform's
@@ -76,7 +76,7 @@ Chunked transfer encoding is not supported by the current device implementation.
 
 ---
 
-## 3. Architectural Principle
+## Architectural Principle
 
 OTA-Service is a modular monolith. API routes, domain decisions, application
 services, database access, and object storage are separated in code while
@@ -91,7 +91,7 @@ The production deployment details are in `docs/13-deployment.md`.
 
 ---
 
-## 4. Technology Stack
+## Technology Stack
 
 ### Backend
 
@@ -135,7 +135,7 @@ The production deployment details are in `docs/13-deployment.md`.
 
 ---
 
-## 5. Storage Responsibility
+## Storage Responsibility
 
 PostgreSQL stores structured metadata.
 
@@ -162,7 +162,7 @@ Firmware binaries must never be stored inside PostgreSQL.
 
 ---
 
-## 6. Deployment Model
+## Deployment Model
 
 The initial production deployment is expected to use:
 
@@ -206,7 +206,7 @@ directly by Nginx or MinIO.
 
 ---
 
-## 7. Design Goals
+## Design Goals
 
 The platform must be:
 
@@ -251,7 +251,7 @@ The initial implementation must leave a clean path toward:
 
 ---
 
-## 8. Initial Deployment Scope
+## Initial Deployment Scope
 
 The initial deployment intentionally does not include:
 
@@ -269,7 +269,7 @@ The domain model should not prevent these capabilities from being introduced lat
 
 ---
 
-## 9. Primary Users
+## Primary Users
 
 ### System Administrator
 
@@ -289,7 +289,7 @@ Read-only access to fleet and firmware information.
 
 ---
 
-## 10. Core Domain
+## Core Domain
 
 The initial domain consists of:
 
@@ -319,7 +319,7 @@ the binary, and stored alongside it at a key that mirrors the download URL.
 
 ---
 
-## 11. Core Principle for Future Development
+## Core Principle for Future Development
 
 The backend must not embed update eligibility logic directly inside HTTP endpoint handlers.
 

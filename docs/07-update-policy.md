@@ -1,6 +1,6 @@
 # OTA Management Platform — Update Policy
 
-## 1. Purpose
+## Purpose
 
 The Update Policy subsystem determines which firmware release a device is allowed to receive.
 
@@ -14,7 +14,7 @@ type, or alter the OTA path. The path model is
 
 ---
 
-# 2. Default Policy
+# Default Policy
 
 If no restrictive policy applies:
 
@@ -29,7 +29,7 @@ The latest eligible release is offered.
 
 ---
 
-# 3. Policy Scope
+# Policy Scope
 
 Initial implementation supports:
 
@@ -51,7 +51,7 @@ Global Default
 
 ---
 
-# 4. Device-Specific Pin
+# Device-Specific Pin
 
 Example:
 
@@ -72,7 +72,7 @@ No policy may make the current firmware install the older pinned version.
 
 ---
 
-# 5. Version Range
+# Version Range
 
 Example:
 
@@ -85,7 +85,7 @@ Only releases within the range are eligible.
 
 ---
 
-# 6. OTA Disabled
+# OTA Disabled
 
 A policy may explicitly disable OTA.
 
@@ -97,7 +97,7 @@ No firmware shall be offered.
 
 ---
 
-# 7. Downgrade
+# Downgrade
 
 Downgrade is forbidden by default.
 
@@ -119,7 +119,7 @@ cause the current backend to offer an older release.
 
 ---
 
-# 8. Version Comparison
+# Version Comparison
 
 Firmware versions must be compared semantically.
 
@@ -133,7 +133,7 @@ String comparison must not be used.
 
 ---
 
-# 9. Policy Resolution
+# Policy Resolution
 
 The decision process:
 
@@ -163,7 +163,7 @@ Select Target
 
 ---
 
-# 10. No Update
+# No Update
 
 The domain returns a no-offer decision when:
 
@@ -187,7 +187,7 @@ misread as "the fleet is up to date" or as a policy block.
 
 ---
 
-# 11. Decision Result
+# Decision Result
 
 The domain should produce:
 
@@ -210,7 +210,7 @@ reason
 
 ---
 
-# 12. Decision Reasons
+# Decision Reasons
 
 Recommended values:
 
@@ -227,7 +227,7 @@ POLICY_BLOCKED
 
 ---
 
-# 13. Policy Priority
+# Policy Priority
 
 Policies of the same scope must have explicit priority.
 
@@ -235,7 +235,7 @@ Database insertion order must never determine behavior.
 
 ---
 
-# 14. Time-Bound Policy
+# Time-Bound Policy
 
 Policies may optionally support:
 
@@ -255,7 +255,7 @@ This is useful for future staged rollout.
 
 ---
 
-# 15. Policy Conflict
+# Policy Conflict
 
 If multiple policies produce conflicting target versions:
 
@@ -265,7 +265,7 @@ If multiple policies produce conflicting target versions:
 
 ---
 
-# 16. Dashboard Preview
+# Dashboard Preview
 
 The dashboard should eventually expose a "Why?" explanation.
 
@@ -291,7 +291,7 @@ This makes policy behavior explainable to administrators.
 
 ---
 
-# 17. Future Rollout Compatibility
+# Future Rollout Compatibility
 
 The policy architecture should support future:
 
@@ -308,7 +308,7 @@ These are future extensions and are not required for the initial deployment.
 
 ---
 
-# 18. Critical Principle
+# Critical Principle
 
 The selected release's device type is always the authenticated device's device
 type; eligibility logic may not search across device types.
@@ -332,7 +332,7 @@ All must use the same decision service.
 
 ---
 
-# 19. Implementation Status
+# Implementation Status
 
 Implemented in the policy domain and service layer; the current policy contract
 is documented in this section and its API behavior in `docs/09-api-specification.md`.
@@ -349,23 +349,24 @@ alembic 0005_update_policy     update_policies, with scope/type integrity checks
 Implemented from this document: default policy, global / device-type / device
 scope with `device > device_type > global` precedence, version pin, inclusive
 version range, OTA disable, explicit priority, `starts_at`/`ends_at` windows,
-conflict rejection, the decision result of §11 including `policy_id` and
-`policy_scope`, and the §16 preview endpoint.
+conflict rejection, the decision result of "Decision Result" including `policy_id`
+and `policy_scope`, and the preview endpoint of "Dashboard Preview".
 
 Two properties are enforced rather than assumed, and they are covered by tests:
 
 - a policy can never cross device types or alter a device's OTA path — it has no
   field that could express either, and candidates are always drawn from the
-  authenticated device's own device type (§18);
+  authenticated device's own device type (see "Critical Principle");
 - a policy that excludes a version withholds its **bytes**, not only its offer,
   so a version cannot be installed from a manifest the device already holds
-  (`docs/15-implementation-decisions.md` §10).
+  ("Update Policy Resolution" in `docs/15-implementation-decisions.md`).
 
 Downgrade protection is structural, not a flag: there is no `allow_downgrade`
 column, and a pin below the known version yields `NO_UPDATE` rather than an older
-image (§7).
+image (see "Downgrade").
 
-Still out of scope, as future rollout features under §17: device groups, release
-channels, percentage/canary rollout, maintenance windows, site targeting, and
-server-initiated pushes (§17 stays as written: the policy architecture does not
-block their addition, but none of them exists yet).
+Still out of scope, as future rollout features described in "Future Rollout
+Compatibility": device groups, release channels, percentage/canary rollout,
+maintenance windows, site targeting, and server-initiated pushes. That section
+stays as written: the policy architecture does not block their addition, but none
+of them exists yet.

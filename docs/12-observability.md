@@ -1,6 +1,6 @@
 # OTA Management Platform — Observability
 
-## 1. Objectives
+## Objectives
 
 Administrators must be able to determine:
 
@@ -14,7 +14,7 @@ Administrators must be able to determine:
 
 ---
 
-# 2. Structured Logging
+# Structured Logging
 
 Application logs must be structured.
 
@@ -38,7 +38,7 @@ Sensitive credentials must never be logged.
 
 ---
 
-# 3. Request ID
+# Request ID
 
 Every API request should have a request ID.
 
@@ -50,7 +50,7 @@ The request ID should appear in:
 
 ---
 
-# 4. Device Events
+# Device Events
 
 Events emitted by the device-facing OTA surface:
 
@@ -95,7 +95,7 @@ itself and is what a field engineer sees with a single `curl`.
 
 ---
 
-# 5. Firmware Events
+# Firmware Events
 
 Track:
 
@@ -116,7 +116,7 @@ backend did not compose.
 
 ---
 
-# 6. Update Metrics
+# Update Metrics
 
 The system should eventually expose:
 
@@ -138,7 +138,7 @@ page a human rather than be buried in an authorization-failure count.
 
 ---
 
-# 7. Device Health
+# Device Health
 
 Dashboard health categories may be derived from:
 
@@ -159,7 +159,7 @@ Thresholds must be configurable.
 
 ---
 
-# 8. Health Endpoints
+# Health Endpoints
 
 Recommended:
 
@@ -174,7 +174,7 @@ Readiness checks required dependencies.
 
 ---
 
-# 9. Dependency Health
+# Dependency Health
 
 Readiness may verify:
 
@@ -194,7 +194,7 @@ The exact behavior must avoid causing cascading failures.
 
 ---
 
-# 10. Audit vs Application Logs
+# Audit vs Application Logs
 
 These are different.
 
@@ -206,7 +206,7 @@ Audit logs should be durable and append-only.
 
 ---
 
-# 11. Error Classification
+# Error Classification
 
 Errors should be classified:
 
@@ -223,7 +223,7 @@ INTERNAL
 
 ---
 
-# 12. Dashboard Operational Reporting
+# Dashboard Operational Reporting
 
 Dashboard should eventually provide:
 
@@ -256,7 +256,7 @@ not a log line.
 
 ---
 
-# 13. Future Observability
+# Future Observability
 
 Future enhancements may add:
 

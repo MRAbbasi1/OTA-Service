@@ -1,6 +1,6 @@
 # OTA Management Platform — System Architecture
 
-## 1. Architectural Style
+## Architectural Style
 
 The initial implementation shall be a modular monolith.
 
@@ -38,7 +38,7 @@ The backend is a single FastAPI application with clear internal boundaries.
 
 ---
 
-# 2. Application Boundaries
+# Application Boundaries
 
 The FastAPI application contains:
 
@@ -52,7 +52,7 @@ Infrastructure
 
 ---
 
-# 3. API Layer
+# API Layer
 
 Responsibilities:
 
@@ -67,7 +67,7 @@ The API layer must not implement update eligibility logic.
 
 ---
 
-# 4. Application Service Layer
+# Application Service Layer
 
 Responsibilities:
 
@@ -91,7 +91,7 @@ AuditService
 
 ---
 
-# 5. Repository Layer
+# Repository Layer
 
 Repositories abstract PostgreSQL persistence.
 
@@ -111,7 +111,7 @@ Repositories should not contain business decisions.
 
 ---
 
-# 6. Storage Layer
+# Storage Layer
 
 MinIO access shall be isolated behind an object-storage abstraction.
 
@@ -127,7 +127,7 @@ The application should not spread MinIO SDK calls throughout business logic.
 
 ---
 
-# 7. Firmware Storage
+# Firmware Storage
 
 The MinIO object layout mirrors the public URL path:
 
@@ -157,7 +157,7 @@ The `<device-type>` and `<platform>` segments are the device type's `code` and
 
 ---
 
-# 7.1 Public Hostnames
+## Public Hostnames
 
 Two hostnames front the same application:
 
@@ -180,7 +180,7 @@ Neither OTA endpoint may redirect, because the device client does not follow
 
 ---
 
-# 8. PostgreSQL Responsibility
+# PostgreSQL Responsibility
 
 PostgreSQL stores:
 
@@ -200,7 +200,7 @@ PostgreSQL does not store firmware binary contents.
 
 ---
 
-# 9. MinIO Responsibility
+# MinIO Responsibility
 
 MinIO stores immutable firmware binaries.
 
@@ -216,7 +216,7 @@ PostgreSQL remains the source of truth for:
 
 ---
 
-# 10. OTA Request Flow
+# OTA Request Flow
 
 ```text
 Device
@@ -256,7 +256,7 @@ own is a no-offer response, never a manifest for another type.
 
 ---
 
-# 11. Firmware Download Flow
+# Firmware Download Flow
 
 ```text
 Device
@@ -294,7 +294,7 @@ redirect, because neither is supported by the device client.
 
 ---
 
-# 12. Security Boundaries
+# Security Boundaries
 
 There are three distinct security domains:
 
@@ -336,7 +336,7 @@ Device ECDSA Verification
 
 ---
 
-# 13. Firmware Trust Model
+# Firmware Trust Model
 
 The backend controls:
 
@@ -368,7 +368,7 @@ The backend must not remove the manifest signature merely because HTTPS is used.
 
 ---
 
-# 14. Reverse Proxy
+# Reverse Proxy
 
 The existing host Nginx is responsible for:
 
@@ -389,7 +389,7 @@ source-IP limit must not penalize devices behind the same carrier NAT. See
 
 ---
 
-# 15. Container Architecture
+# Container Architecture
 
 Production Docker deployment:
 
@@ -406,7 +406,7 @@ managed persistent services and are not exposed to the public Internet.
 
 ---
 
-# 16. Environment Separation
+# Environment Separation
 
 At minimum:
 
@@ -426,7 +426,7 @@ Each environment must have separate:
 
 ---
 
-# 17. Configuration
+# Configuration
 
 Configuration shall come from environment variables or a secure secret mechanism.
 
@@ -457,7 +457,7 @@ Secrets must never be committed to Git.
 
 ---
 
-# 18. Scalability
+# Scalability
 
 The application must remain stateless at the HTTP layer wherever possible.
 
@@ -487,7 +487,7 @@ shared rate-limit state and a revised database connection budget.
 
 ---
 
-# 19. Future Extensions
+# Future Extensions
 
 The architecture shall allow future:
 

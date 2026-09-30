@@ -1,6 +1,6 @@
 # OTA Management Platform — API Specification
 
-## 1. API Structure
+## API Structure
 
 The API is divided into:
 
@@ -33,7 +33,7 @@ dependency, so a slow database cannot cause a restart loop; readiness returns
 
 ---
 
-# 2. Admin API
+# Admin API
 
 Every administrative endpoint requires an authenticated session, a capability,
 and — for unsafe methods — a matching CSRF header. Authentication is not
@@ -137,7 +137,7 @@ firmware installed or booted.
 
 ---
 
-# 3. Device Types
+# Device Types
 
 ```http
 GET    /api/v1/admin/device-types
@@ -168,7 +168,7 @@ provision devices without constructing them by hand:
 
 ---
 
-# 4. Firmware
+# Firmware
 
 ```http
 GET    /api/v1/admin/firmware/releases
@@ -201,15 +201,15 @@ The administrator never supplies MD5, size, SHA-256, or the download URL: the
 first three are computed from the bytes, and the URL is composed from the
 validated parameters. An uploaded manifest whose `version`, `md5`, or `size`
 disagrees with the binary, or whose `url` is not the composed canonical URL, is
-rejected — see `docs/16-update-path-and-publication.md` §8 for the full
-procedure and the rejection codes.
+rejected — see "Publication Procedure" in
+`docs/16-update-path-and-publication.md` for the procedure and rejection codes.
 
 Release responses expose the derived artifact and manifest URLs and storage
 keys, plus the manifest field set that will actually be served.
 
 ---
 
-# 5. Firmware Artifact
+# Firmware Artifact
 
 ```http
 POST   /api/v1/admin/firmware/artifacts
@@ -226,7 +226,7 @@ sha256
 
 ---
 
-# 6. Policies
+# Policies
 
 ```http
 GET    /api/v1/admin/policies
@@ -259,8 +259,8 @@ Incoherent definitions are `422` (`policy_target_required`,
 `policy_scope_target_required`, `policy_scope_target_forbidden`,
 `invalid_version`). A second active policy with the same scope target and the
 same priority over an overlapping window is `409 policy_conflict`: the platform
-refuses to guess an outcome the data cannot decide
-(`docs/15-implementation-decisions.md` §10).
+refuses to guess an outcome the data cannot decide ("Update Policy Resolution" in
+`docs/15-implementation-decisions.md`).
 
 `PATCH` edits the definition in place; `scope`, `policy_type`, `device_id`, and
 `device_type_id` are not accepted there (unknown fields are rejected, not
@@ -273,7 +273,7 @@ something useful. Disabling it with `POST .../active` keeps it for the record.
 
 ---
 
-# 7. Update Preview
+# Update Preview
 
 ```http
 GET /api/v1/admin/devices/{id}/update-decision
@@ -308,7 +308,7 @@ never writes `last_manifest_check_at` or an `update_attempts` row.
 
 ---
 
-# 8. Dashboard
+# Dashboard
 
 ```http
 GET /api/v1/admin/dashboard/summary
@@ -345,7 +345,7 @@ several categories is counted once in the summary total.
 
 ---
 
-# 9. Audit
+# Audit
 
 ```http
 GET /api/v1/admin/audit-events
@@ -359,7 +359,7 @@ reason, never the password.
 
 ---
 
-# 10. OTA Manifest
+# OTA Manifest Request
 
 ```http
 GET https://api.ota-service.example/api/v1/firmware/{device_type}/{platform}/manifest.json
@@ -377,7 +377,7 @@ This is the URL provisioned on devices as `OTA_ONLINE_URL`.
 
 ---
 
-# 11. OTA Manifest
+# OTA Manifest Response
 
 ```http
 GET https://api.ota-service.example/api/v1/firmware/{device_type}/{platform}/manifest.json
@@ -395,11 +395,11 @@ no Transfer-Encoding, no Location
 ```
 
 A `200` is returned only when an actual eligible release exists for that device.
-Otherwise the response is the no-offer `404` (§12).
+Otherwise the response is the no-offer `404` described under "OTA Firmware".
 
 ---
 
-# 12. OTA Firmware
+# OTA Firmware
 
 ```http
 GET https://cdn.ota-service.example/firmware/{device_type}/{platform}/v{version}/{filename}
@@ -426,7 +426,7 @@ no Transfer-Encoding, no Location
 The release is resolved by exact version and filename, and must be `PUBLISHED`
 or `DEPRECATED`: a deprecated release is no longer offered, but a device already
 holding a signed manifest can finish that download, and pinned devices may still
-use it (`docs/06-firmware-management.md` §12). Entitlement is re-decided on
+use it ("Deprecated" in `docs/06-firmware-management.md`). Entitlement is re-decided on
 every download, so a signed manifest is never an authorization grant for the
 binary.
 
@@ -438,7 +438,7 @@ intermediary. The complete path and serving model is
 
 ---
 
-# 13. Authentication Errors
+# Authentication Errors
 
 ```text
 401
@@ -492,12 +492,12 @@ to probe which serial numbers are enrolled.
 
 A policy that excludes a version also `404`s its binary (`POLICY_BLOCKED`). That
 is deliberate: withholding only the offer would leave the version installable
-from a manifest the device already holds (`docs/15-implementation-decisions.md`
-§10).
+from a manifest the device already holds ("Update Policy Resolution" in
+`docs/15-implementation-decisions.md`).
 
 ---
 
-# 14. Error Format
+# Error Format
 
 Admin API errors should use a consistent structured format.
 
@@ -517,7 +517,7 @@ OTA endpoints must preserve the HTTP semantics expected by the firmware.
 
 ---
 
-# 15. Pagination
+# Pagination
 
 Administrative list endpoints shall use pagination.
 
@@ -532,7 +532,7 @@ or cursor pagination if scale requires it.
 
 ---
 
-# 16. Filtering
+# Filtering
 
 Device endpoints should support filters for:
 
@@ -557,7 +557,7 @@ to a device type.
 
 ---
 
-# 17. API Versioning
+# API Versioning
 
 Breaking API changes require a new version.
 
@@ -565,7 +565,7 @@ Existing OTA device contract must not silently change.
 
 ---
 
-# 18. OpenAPI
+# OpenAPI
 
 FastAPI shall generate OpenAPI documentation.
 

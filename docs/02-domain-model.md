@@ -1,6 +1,6 @@
 # OTA Management Platform — Domain Model
 
-## 1. Domain Entities
+## Domain Entities
 
 The initial domain contains:
 
@@ -19,7 +19,7 @@ AdminUser
 
 ---
 
-# 2. DeviceType
+# DeviceType
 
 Represents a class of hardware/software-compatible devices.
 
@@ -74,7 +74,7 @@ The complete model is `docs/16-update-path-and-publication.md`.
 
 ---
 
-# 3. Device
+# Device
 
 Represents one physical deployed controller.
 
@@ -108,7 +108,7 @@ updated_at
 
 ---
 
-# 4. Raw eFuse MAC
+# Raw eFuse MAC
 
 `raw_efuse_mac` represents the MAC value sent by `OtaManager` in:
 
@@ -134,7 +134,7 @@ mac
 
 ---
 
-# 5. DeviceToken
+# DeviceToken
 
 Authentication credentials should be modeled independently from the Device entity.
 
@@ -160,7 +160,7 @@ Token rotation should create a new credential rather than modifying historical a
 
 ---
 
-# 6. FirmwareRelease
+# FirmwareRelease
 
 Represents a logical firmware release.
 
@@ -200,7 +200,7 @@ ARCHIVED
 
 ---
 
-# 7. FirmwareArtifact
+# FirmwareArtifact
 
 Represents the actual binary stored in MinIO.
 
@@ -232,7 +232,7 @@ and `size` are always computed by the backend, never admin-supplied, and the
 
 ---
 
-# 7.1 FirmwareManifest
+## FirmwareManifest
 
 Represents the signed manifest that is actually served to devices, and the
 validated field set recorded at publication time.
@@ -268,7 +268,7 @@ be byte-identical to it.
 
 ---
 
-# 8. Relationship
+# Relationship
 
 ```text
 DeviceType
@@ -288,7 +288,7 @@ policy that is not device-specific.
 
 ---
 
-# 9. UpdatePolicy
+# UpdatePolicy
 
 Represents update eligibility rules.
 
@@ -328,7 +328,7 @@ A generalized rule engine is intentionally deferred.
 
 ---
 
-# 10. Policy Targeting
+# Policy Targeting
 
 Policy specificity should determine precedence.
 
@@ -348,7 +348,7 @@ The implementation must never rely on database row ordering.
 
 ---
 
-# 11. UpdateAttempt
+# UpdateAttempt
 
 Represents a server-observed update operation.
 
@@ -389,7 +389,7 @@ does not permit `VERIFIED`, `SUCCESS`, or any installed-and-booted state.
 
 ---
 
-# 12. AuditEvent
+# AuditEvent
 
 ```text
 AuditEvent
@@ -415,7 +415,7 @@ Audit events should be append-only.
 
 ---
 
-# 13. AdminUser
+# AdminUser
 
 ```text
 AdminUser
@@ -445,7 +445,7 @@ VIEWER
 
 ---
 
-# 14. Version Model
+# Version Model
 
 Firmware versions shall use the firmware-compatible Semantic Versioning subset:
 
@@ -460,7 +460,7 @@ String comparison must never be used for firmware eligibility.
 
 ---
 
-# 15. Domain Invariants
+# Domain Invariants
 
 ### Device
 
@@ -498,7 +498,7 @@ String comparison must never be used for firmware eligibility.
 
 ---
 
-# 16. Update Decision Model
+# Update Decision Model
 
 The central domain operation is:
 
@@ -535,7 +535,7 @@ Return UpdateDecision
 
 ---
 
-# 17. UpdateDecision
+# UpdateDecision
 
 A decision object should contain enough information for both the OTA API and Dashboard.
 
@@ -573,7 +573,7 @@ The exact enum should be finalized during implementation.
 
 ---
 
-# 18. Future Domain Extensions
+# Future Domain Extensions
 
 The domain should allow future introduction of:
 

@@ -1,6 +1,6 @@
 # OTA Management Platform — Requirements
 
-## 1. Functional Requirements
+## Functional Requirements
 
 ### FR-001 — Device Type Management
 
@@ -26,7 +26,7 @@ Hardware Revision: Rev-A
 
 ---
 
-## 2. Device Management
+## Device Management
 
 ### FR-010 — Register Device
 
@@ -95,7 +95,7 @@ An inactive or OTA-disabled device shall not receive firmware updates.
 
 ---
 
-## 3. Device Status
+## Device Status
 
 The system shall track independently:
 
@@ -111,7 +111,7 @@ These timestamps must not be treated as interchangeable.
 
 ---
 
-## 4. Firmware Management
+## Firmware Management
 
 ### FR-020 — Upload Firmware
 
@@ -226,7 +226,7 @@ SHA-256 is maintained for stronger backend-side integrity verification.
 
 ---
 
-## 5. OTA Manifest
+## OTA Manifest
 
 ### FR-030 — Manifest Endpoint
 
@@ -290,7 +290,7 @@ as the authoritative verifier.
 
 ---
 
-## 6. Firmware Download
+## Firmware Download
 
 ### FR-040 — Firmware Download
 
@@ -336,7 +336,7 @@ A transient backend failure must not be represented as a non-authentication 4xx 
 
 ---
 
-## 7. Update Policies
+## Update Policies
 
 ### FR-050 — Default Behavior
 
@@ -405,7 +405,7 @@ registered or a release is published.
 
 ---
 
-## 8. Update Decision
+## Update Decision
 
 ### FR-060 — Deterministic Decision
 
@@ -429,7 +429,7 @@ The decision must be deterministic.
 
 ---
 
-## 9. Update Tracking
+## Update Tracking
 
 ### FR-070 — Update Attempt
 
@@ -468,7 +468,7 @@ The current `OtaManager` contract does not provide sufficient post-reboot teleme
 
 ---
 
-## 10. Dashboard Requirements
+## Dashboard Requirements
 
 ### FR-080 — Fleet Overview
 
@@ -521,7 +521,7 @@ Device detail shall display:
 
 ---
 
-## 11. Audit
+## Audit
 
 ### FR-090 — Administrative Audit
 

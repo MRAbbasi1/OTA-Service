@@ -6,8 +6,10 @@ environment or a frontend. It is a test-coverage record, not a claim that
 application security can be proven by a single test suite.
 
 `PASS` identifies an automated regression assertion for the stated backend
-behavior; it does not replace a passing CI run or the live deployment checks
-listed below.
+behavior; it does not replace a passing CI run or the deployment checks listed
+below. The controls themselves are defined in `docs/08-security.md`; the
+production configuration they depend on is specified in
+`docs/13-deployment.md`.
 
 ## Verification Matrix
 
@@ -24,15 +26,16 @@ listed below.
 | SQL/ORM injection               | SQLAlchemy expressions and bound values are used for user-controlled search                   | `tests/test_security_verification.py::test_sql_looking_search_value_cannot_expand_device_results`                                                                                                       | **PASS** — SQL-looking input remains a search value and does not expand the result set.                                                                                                                                      |
 | Storage boundary                | MinIO is private and device download requests authenticate and authorize before object access | `tests/test_ota_api.py`, `tests/test_firmware_api.py`, `tests/test_minio_integration.py`                                                                                                                | **PASS** — API responses do not hand devices object URLs or redirects; unauthorized delivery is covered.                                                                                                                     |
 | Error leakage                   | Unexpected storage and database failures are handled by the generic HTTP 500 response         | `tests/test_security_verification.py::test_minio_failure_response_does_not_leak_internal_details`, `tests/test_security_verification.py::test_database_failure_response_does_not_leak_internal_details` | **PASS** — the response omits injected endpoint, credential, and traceback markers. Operational logs remain subject to the separate secret-redaction requirements.                                                           |
-| Security headers                | Production host Nginx adds HSTS, `nosniff`, frame denial, and referrer policy with `always`   | `tests/test_security_verification.py::test_production_nginx_configures_security_headers_on_error_responses`, `tests/test_phase6_hardening.py`                                                           | **CONFIGURATION PASS / LIVE PROXY REQUIRED** — TestClient bypasses Nginx. A deployment smoke test must inspect actual success and error responses through the installed host virtual host.                                   |
+| Security headers                | Production host Nginx adds HSTS, `nosniff`, frame denial, and referrer policy with `always`   | `tests/test_security_verification.py::test_production_nginx_configures_security_headers_on_error_responses`, `tests/test_phase6_hardening.py`                                                           | **PASS, verified in production** — the configuration is pinned by the regression test, and the headers were confirmed on success **and** error responses through the public listener of a production deployment.             |
 
 ## Interpretation
 
 The current backend checks are sufficient to claim regression coverage for its
 authentication, sessions, RBAC, CSRF, rate limiting, CORS response policy,
 bound-query behavior, storage boundary, and generic error response. They do not
-prove that a frontend is safe from XSS, nor that production Nginx is serving
-these headers correctly at runtime.
+prove that a frontend is safe from XSS. Runtime behavior through the production
+proxy — security headers on success and error responses, reachability, and
+firewall integration — was verified separately in a production deployment.
 
 The FastAPI API is not a rendered HTML application. Returning a string such as
 `<script>...</script>` inside `application/json` proves only that this backend
@@ -47,19 +50,29 @@ overwrites `X-Real-IP` and `X-Forwarded-For`; Uvicorn does not process arbitrary
 proxy headers. Changing any of these three conditions requires updating this
 contract and re-verifying it before deployment.
 
-## Production Acceptance Still Required
+## Verified in Production
 
-Before calling the deployed service security-verified:
+All items below were verified in a production deployment of this stack.
 
-1. Run the production Nginx virtual host and confirm HSTS,
-   `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy` are present
-   on both successful and error responses.
-2. Send a request with forged `X-Real-IP` and `X-Forwarded-For` values through
-   the public Nginx listener and confirm login throttling still keys on the
-   socket peer address observed by Nginx.
-3. Confirm the API is reachable only through the intended loopback binding and
-   that MinIO is not publicly reachable.
-4. Test the consuming frontend separately for safe rendering and DOM XSS sinks.
+| Item                                            | Result                                                                                                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Security headers on success and error responses | **Verified** — HSTS, `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy` are present through the public listener on both OTA hostnames, including on error responses. |
+| API reachability                                | **Verified** — the API answers only through the public proxy; the container publish stays on loopback.                                                                               |
+| Storage reachability                            | **Verified** — MinIO is not publicly reachable.                                                                                                                                      |
+| Host firewall integration                       | **Verified** — UFW is active and `ufw-docker` is installed, so container publishes cannot bypass UFW.                                                                                |
+| Ban handling on the host                        | **Verified** — fail2ban runs, and CI runner bans are cleared with `fail2ban-client unban --all`.                                                                                     |
+| Health endpoints from the Internet              | **Verified** — `/health/live` and `/health/ready` answer through the public listener.                                                                                                |
 
-These are deployment/frontend acceptance checks, not claims made by the
-FastAPI TestClient suite.
+The host-side configuration these items depend on is specified in "Firewall" in
+`docs/13-deployment.md`, and the commands used to re-check them are in "Security
+Hygiene" in `docs/18-operations.md`.
+
+## Production Acceptance — Remaining Work
+
+1. Send a request with forged `X-Real-IP` and `X-Forwarded-For` values through
+   the public listener and confirm login throttling still keys on the socket peer
+   address observed by the proxy.
+2. Test the consuming frontend separately for safe rendering and DOM XSS sinks.
+
+These are deployment and frontend acceptance checks, not claims made by the
+FastAPI TestClient suite; the automated suite cannot substitute for them.
