@@ -75,7 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # pipeline produces the signature, so `None` is the normal setting: the
         # platform stores and serves the signed manifest verbatim. A deployment
         # that wants the extra check wires a verifier here, and then verification
-        # becomes mandatory for uploads.
+        # becomes mandatory for uploads. 
         app.state.manifest_verifier = None
         logger.info(
             "application_started",
