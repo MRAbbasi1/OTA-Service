@@ -8,6 +8,10 @@
 #
 # The existing host Nginx remains the sole owner of ports 80 and 443.
 # Replace the example hostnames and the certificate directory before enabling.
+#
+# TLS listeners use `listen 443 ssl http2;`, which works on every nginx
+# version. On nginx >= 1.25.1 this form is deprecated but accepted; the
+# modern equivalent is `listen 443 ssl;` plus a separate `http2 on;`.
 
 upstream ota_service_api {
     server 127.0.0.1:18080;
@@ -18,8 +22,7 @@ upstream ota_service_api {
 # api.<your-domain> — device manifest only
 # ---------------------------------------------------------------------------
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name api.ota-service.example;
 
     ssl_certificate     /etc/letsencrypt/live/ota-service/fullchain.pem;
@@ -64,8 +67,7 @@ server {
 # cdn.<your-domain> — firmware binary delivery only
 # ---------------------------------------------------------------------------
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name cdn.ota-service.example;
 
     ssl_certificate     /etc/letsencrypt/live/ota-service/fullchain.pem;
@@ -113,8 +115,7 @@ server {
 # ota.<your-domain> — administrative API + frontend SPA
 # ---------------------------------------------------------------------------
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name ota.ota-service.example;
 
     ssl_certificate     /etc/letsencrypt/live/ota-service/fullchain.pem;
