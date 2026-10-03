@@ -134,3 +134,9 @@ docs/OtaManager.md
 *.local.md
 OPERATIONS.local.md
 INSTANCE.md
+
+# ============================================================
+# Local-only documentation — never commit
+# ============================================================
+
+docs/CHANGELOG.md

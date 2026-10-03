@@ -11,7 +11,8 @@ Day-to-day operation of an instance that is already running is covered in
 ## Placeholder Convention
 
 Values shown as `api.ota-service.example`, `cdn.ota-service.example`,
-`<your-server-ip>`, `<your-deploy-user>`, `<your-gh-owner>`, and similar are
+`ota.ota-service.example`, `<your-server-ip>`, `<your-deploy-user>`,
+`<your-gh-owner>`, and similar are
 placeholders for the values specific to your deployment. Never mix a placeholder
 and a concrete value inside one configuration file.
 
@@ -53,18 +54,21 @@ OTA-Service API container
           └── private MinIO minio:9000      (private Compose network, TLS)
 ```
 
-Both OTA hostnames route to the same FastAPI instance:
+All three public hostnames route to the same FastAPI instance:
 
 ```text
-api.ota-service.example   manifest retrieval and the administrative API
-cdn.ota-service.example   firmware binary delivery
+api.ota-service.example   device manifest retrieval
+cdn.ota-service.example   firmware binary delivery (device)
+ota.ota-service.example   administrative API + frontend SPA
 ```
 
 `cdn.ota-service.example` is a delivery hostname of this application, not a
 static file server and not MinIO. Firmware is authenticated on that hostname
 exactly as on the manifest hostname, and no OTA response may be a redirect. The
 firmware URL and object-key model are normative in
-`docs/16-update-path-and-publication.md`.
+`docs/16-update-path-and-publication.md`. The device hostnames expose only
+their device routes and health probes; every other path returns `404`. The
+administrative API is served only on `ota.ota-service.example`.
 
 ### Shared-host constraints
 
@@ -100,15 +104,15 @@ must be opened explicitly in the host firewall.
 
 ## TLS and Certificates
 
-HTTPS is mandatory for production, on both public hostnames. Certificates are
-managed independently from application secrets.
+HTTPS is mandatory for production, on all three public hostnames. Certificates
+are managed independently from application secrets.
 
 The device pins a single Root CA (currently ISRG Root X1, Let's Encrypt). A
 certificate chain that does not terminate at that root cannot be changed from
 the server side: it requires a new firmware release already in the field.
 
 ```text
-both hostnames must use certificates issued by the pinned CA
+all three hostnames must use certificates issued by the pinned CA
 no other CA may be introduced without a firmware review
 certificate renewal and chain changes are firmware-affecting events
 ```
@@ -117,14 +121,16 @@ Both OTA endpoints reject redirects. A TLS-terminating proxy or CDN that
 redirects, or that rewrites the host, breaks the firmware contract rather than
 degrading gracefully.
 
-Because both hostnames are served by one virtual host, issue a single
-certificate that carries both names:
+Because all three hostnames are served by one virtual host, issue a single
+certificate that carries all three names:
 
 ```bash
-# One certificate for both OTA hostnames; later renewals reuse the same cert-name.
+# One certificate for all three OTA hostnames; later renewals reuse the same cert-name.
 sudo certbot certonly --nginx \
   --cert-name ota-service \
-  -d api.ota-service.example -d cdn.ota-service.example
+  -d api.ota-service.example \
+  -d cdn.ota-service.example \
+  -d ota.ota-service.example
 ```
 
 The certificate files used by the virtual host are then
@@ -144,7 +150,8 @@ creates.
  2. Deploy user (docker group) + directory layout
  3. SSH key pair for GitHub Actions (no passphrase)
  4. /opt/ota-service/.env (the only manual secret step)
- 5. DNS A records for api.ota-service.example and cdn.ota-service.example
+ 5. DNS A records for api.ota-service.example, cdn.ota-service.example,
+    and ota.ota-service.example
  6. Host Nginx virtual host + public certificate
  7. GitHub Environment production + its secrets
  8. First push to main (runs quality → build → deploy)
@@ -215,10 +222,11 @@ never writes it.
 ```text
 api.ota-service.example   A   <your-server-ip>
 cdn.ota-service.example   A   <your-server-ip>
+ota.ota-service.example   A   <your-server-ip>
 ```
 
-Both records must resolve before the certificate step, because certbot validates
-over HTTP.
+All three records must resolve before the certificate step, because certbot
+validates over HTTP.
 
 ### Nginx virtual host and certificate
 
@@ -226,7 +234,8 @@ Issue the certificate first, then install the site (see "Host Nginx"):
 
 ```bash
 sudo certbot certonly --nginx --cert-name ota-service \
-  -d api.ota-service.example -d cdn.ota-service.example
+  -d api.ota-service.example -d cdn.ota-service.example \
+  -d ota.ota-service.example
 ```
 
 The example site file reaches the host with the first deploy bundle; until then,
@@ -667,7 +676,7 @@ Required keys:
 ```text
 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
 MINIO_ROOT_USER / MINIO_ROOT_PASSWORD / MINIO_BUCKET
-OTA_MANIFEST_BASE_URL      # https://api.ota-service.example — manifest route + admin API
+OTA_MANIFEST_BASE_URL      # https://api.ota-service.example — device manifest host
 OTA_FIRMWARE_BASE_URL      # https://cdn.ota-service.example — firmware delivery host
 ADMIN_JWT_SECRET
 ```
@@ -707,7 +716,8 @@ The shared host Nginx owns public ingress and retains all unrelated virtual
 hosts:
 
 ```text
-TLS termination for api.ota-service.example and cdn.ota-service.example
+TLS termination for api.ota-service.example, cdn.ota-service.example,
+and ota.ota-service.example
 virtual-host routing to the loopback-bound API
 proxy request/response limits
 security headers
@@ -717,6 +727,19 @@ upstream timeouts
 The existing host's port-80 policy and certificate-renewal mechanism remain
 authoritative. OTA devices must use the final HTTPS URLs directly; the OTA routes
 themselves must never redirect.
+
+The template declares three server blocks. `api.*` and `cdn.*` serve
+device-facing routes only; every other path returns `404`. `ota.*` serves the
+administrative API and the frontend SPA. The device-facing hostnames and the
+administrative hostname share one certificate and one Nginx instance, but
+distinct server blocks. The `ota.*` block raises `client_max_body_size` so
+administrative firmware uploads can pass; the device hostnames keep a small
+limit.
+
+The frontend SPA is served as static files by the host. The template uses
+`/var/www/ota-dashboard` as the document root; replace it with the real build
+output path before enabling the SPA. If the frontend has not been built yet,
+leave the path as is — only the `ota.*` hostname is affected.
 
 OTA-specific requirements:
 
@@ -747,6 +770,7 @@ sudo cp /opt/ota-service/deploy/nginx/ota-service.conf.example \
 sudo sed -i \
   -e "s/api\.ota-service\.example/api.${DOMAIN}/g" \
   -e "s/cdn\.ota-service\.example/cdn.${DOMAIN}/g" \
+  -e "s/ota\.ota-service\.example/ota.${DOMAIN}/g" \
   -e "s#/etc/letsencrypt/live/ota-service/#/etc/letsencrypt/live/${CERT_NAME}/#g" \
   /etc/nginx/sites-available/ota-service.conf
 

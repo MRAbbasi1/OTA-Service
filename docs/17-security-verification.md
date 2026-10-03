@@ -62,6 +62,7 @@ All items below were verified in a production deployment of this stack.
 | Host firewall integration                       | **Verified** — UFW is active and `ufw-docker` is installed, so container publishes cannot bypass UFW.                                                                                |
 | Ban handling on the host                        | **Verified** — fail2ban runs, and CI runner bans are cleared with `fail2ban-client unban --all`.                                                                                     |
 | Health endpoints from the Internet              | **Verified** — `/health/live` and `/health/ready` answer through the public listener.                                                                                                |
+| Administrative API is reachable only on the administrative hostname | **Verified** — `/api/v1/admin/*` returns `404` on `api.*` and `cdn.*`, and `401` (without session) on `ota.*`. |
 
 The host-side configuration these items depend on is specified in "Firewall" in
 `docs/13-deployment.md`, and the commands used to re-check them are in "Security
@@ -73,6 +74,9 @@ Hygiene" in `docs/18-operations.md`.
    the public listener and confirm login throttling still keys on the socket peer
    address observed by the proxy.
 2. Test the consuming frontend separately for safe rendering and DOM XSS sinks.
+3. Confirm the hostname routing matrix against the deployed proxy:
+   `/api/v1/admin/*` answers `404` on `api.*` and `cdn.*`, and the frontend SPA
+   on `ota.*` reaches `/api/v1/admin/*` on its own origin.
 
 These are deployment and frontend acceptance checks, not claims made by the
 FastAPI TestClient suite; the automated suite cannot substitute for them.

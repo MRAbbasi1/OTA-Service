@@ -163,6 +163,11 @@ Production OTA endpoints and production administrative APIs must use HTTPS. HTTP
 must not be used for production administrative authentication or firmware
 delivery.
 
+The administrative API is served on `ota.<your-domain>`, distinct from the
+device-facing hostnames `api.<your-domain>` and `cdn.<your-domain>`. The device
+hostnames reject every administrative path with `404`, so a device cannot reach
+the admin surface even if it guesses a path.
+
 The production API port is bound to loopback and accepts traffic only through the
 host Nginx virtual host. Nginx overwrites `X-Real-IP` and `X-Forwarded-For` with
 its direct client address, and Uvicorn does not trust arbitrary forwarded
@@ -175,12 +180,22 @@ Production Nginx adds HSTS, `X-Content-Type-Options`, `X-Frame-Options`, and
 `Referrer-Policy` headers, including on error responses. FastAPI does not enable
 CORS; the API does not grant browser origins access via
 `Access-Control-Allow-Origin`. CORS is a browser response-sharing policy, not
-server-side authentication and not a substitute for CSRF protection.
+server-side authentication and not a substitute for CSRF protection. The
+frontend SPA and the administrative API are same-origin on `ota.<your-domain>`,
+so no CORS exception is needed and none is granted.
 
 The device pins a single Root CA. A certificate chain that does not terminate at
 that root cannot be changed from the server side, so certificate selection is a
 firmware-affecting decision; see "TLS and Certificates" in
 `docs/13-deployment.md`.
+
+## Host-based Route Separation
+
+The three public hostnames are served by distinct Nginx server blocks. `api` and
+`cdn` expose only device routes and health probes; every other path returns
+`404`. The administrative API and the frontend SPA share `ota`. This is a
+routing control, not an authentication control: the application still requires a
+session and capability on every administrative request.
 
 ## Firmware Signature
 

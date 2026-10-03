@@ -9,21 +9,30 @@ Admin API
 OTA Device API
 ```
 
-Recommended prefixes:
+Each public hostname serves a single role:
 
 ```text
-/api/v1/admin/*                          administrative API
-/api/v1/firmware/{type}/{platform}/*     device manifest endpoint
-/firmware/{type}/{platform}/v{ver}/*     device firmware endpoint (delivery host)
+api.<your-domain>
+    /api/v1/firmware/{device_type}/{platform}/manifest.json   device manifest
+    /health/live                                              liveness
+    /health/ready                                             readiness
+
+cdn.<your-domain>
+    /firmware/{device_type}/{platform}/v{version}/{filename}  firmware binary
+    /health/live
+    /health/ready
+
+ota.<your-domain>
+    /api/v1/admin/*                                           administrative API
+    /                                                         frontend SPA
+    /health/live
+    /health/ready
 ```
 
 The device-facing route shape is fixed by the firmware contract; the complete
-URL model is `docs/16-update-path-and-publication.md`.
-
-```text
-/health/live                             liveness; no dependency is touched
-/health/ready                            readiness; checks PostgreSQL and MinIO
-```
+URL model is `docs/16-update-path-and-publication.md`. The administrative API is
+served only on `ota.<your-domain>`; the device hostnames answer every
+administrative path with `404`.
 
 The probes are unauthenticated by design — a probe has no session, and requiring
 one would mean an unhealthy instance cannot be detected. They never name a host,
@@ -43,7 +52,9 @@ capability it needs, so an unauthenticated route cannot be added by omission.
 Relationship to the device API: `/api/v1/admin/*` is for people,
 `/api/v1/firmware/*` and `/firmware/*` are for devices. They share no
 credentials and no error semantics — an admin `403` is a permission problem,
-while a device `403` silences a controller for 24 hours.
+while a device `403` silences a controller for 24 hours. The two surfaces are
+also separated at the hostname: the administrative API is served only on
+`ota.<your-domain>`, and the device hostnames do not route it.
 
 ## Admin authentication
 

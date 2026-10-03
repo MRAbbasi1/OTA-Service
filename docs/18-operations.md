@@ -14,8 +14,9 @@ host bootstrap, and component configuration — is defined in
 | Server            | `<your-server-ip>`                     | SSH on port 22                           |
 | Deploy user       | `<your-deploy-user>`                   | `docker` group; root-equivalent          |
 | SSH key           | `~/.ssh/<your-key-name>`               | per-operator, passphrase-protected       |
-| API hostname      | `api.ota-service.example`              | admin API + manifest                     |
-| Firmware hostname | `cdn.ota-service.example`              | firmware delivery                        |
+| Device manifest host      | `api.ota-service.example`        | device manifest endpoint                 |
+| Firmware delivery host    | `cdn.ota-service.example`        | firmware binaries                        |
+| Admin API + frontend host | `ota.ota-service.example`        | administrative API + SPA                 |
 | Deploy path       | `/opt/ota-service`                     | standard convention                      |
 | State file        | `/opt/ota-service/.ota-previous-image` | the deployed API image                   |
 | Loopback API      | `127.0.0.1:18080`                      | health probes; used by the deploy script |
@@ -317,7 +318,7 @@ images is `python -m app.cli.bootstrap_admin`.
 
 ### API access from a workstation
 
-Admin API requests go to `https://api.ota-service.example`. Login sets the
+Admin API requests go to `https://ota.ota-service.example`. Login sets the
 session cookie (and a CSRF cookie); mutating requests must echo the CSRF token in
 the `X-CSRF-Token` header.
 
@@ -325,16 +326,16 @@ the `X-CSRF-Token` header.
 # Step 1: log in once; keep cookies and capture the CSRF token from the response.
 LOGIN=$(curl -fsS -c /tmp/ota-admin-cookies.txt -H 'Content-Type: application/json' \
   -d '{"email":"admin@example.com","password":"<password>"}' \
-  https://api.ota-service.example/api/v1/admin/auth/login)
+  https://ota.ota-service.example/api/v1/admin/auth/login)
 CSRF=$(jq -r .csrf_token <<<"$LOGIN")
 
 # Step 2: read-only calls need no CSRF header.
 curl -fsS -b /tmp/ota-admin-cookies.txt \
-  https://api.ota-service.example/api/v1/admin/dashboard/summary | jq .
+  https://ota.ota-service.example/api/v1/admin/dashboard/summary | jq .
 
 # Step 3: mutating calls carry the CSRF header.
 curl -fsS -b /tmp/ota-admin-cookies.txt -H "X-CSRF-Token: $CSRF" -X POST \
-  https://api.ota-service.example/api/v1/admin/auth/logout
+  https://ota.ota-service.example/api/v1/admin/auth/logout
 ```
 
 Login is rate-limited to 5 attempts per 15 minutes per address and email; a
@@ -365,7 +366,7 @@ Device-token operations return the new plaintext token exactly once:
 ```bash
 # Rotate one device's token (returns the new token; stores only its hash).
 curl -fsS -b /tmp/ota-admin-cookies.txt -H "X-CSRF-Token: $CSRF" \
-  -X POST https://api.ota-service.example/api/v1/admin/devices/<device-id>/token/rotate | jq .
+  -X POST https://ota.ota-service.example/api/v1/admin/devices/<device-id>/token/rotate | jq .
 ```
 
 - Provision the returned token to the device immediately; an unprovisioned
@@ -470,6 +471,9 @@ maintenance policy and are unrelated to OTA-Service.
 | A container port answers from the Internet despite UFW                                 | port published on `0.0.0.0`, or `ufw-docker` missing                              | publish on `127.0.0.1` only and install `ufw-docker`                                    |
 | `gh api` package call returns `403` or `404`                                           | missing package scopes                                                            | `gh auth refresh -h github.com -s read:packages,delete:packages`                        |
 | API container restarts repeatedly                                                      | configuration error, or the disk is full                                          | read `otac logs --tail=200 api`, check `df -h /`                                        |
+| `404` on `/api/v1/admin/*` from the admin host                                         | server block missing or wrong `server_name`                                       | check `nginx -T`; verify the `ota.*` server block exists                                |
+| `404` on `/api/v1/firmware/*` from the device host                                     | the `api.*` server block was replaced by an `ota.*` block                         | restore the `api.*` block; devices cannot be re-flashed easily                          |
+| Frontend loads but API calls return `404`                                              | frontend calling the wrong hostname                                               | frontend must call `/api/v1/admin/*` on the same origin (`ota.*`)                       |
 
 ## Emergency Procedures
 
@@ -599,8 +603,8 @@ named volumes. `down -v` destroys them and is never used on production.
 | `/health/live`  | process is up; touches no dependency      | container healthcheck, host probes |
 | `/health/ready` | database and object storage are reachable | deploy gate, monitoring            |
 
-Both are served through the public host `api.ota-service.example` and on the
-loopback port `127.0.0.1:18080`.
+Both endpoints are served through all three public hostnames and on the loopback
+port `127.0.0.1:18080`.
 
 ### Routine checks
 
@@ -617,8 +621,10 @@ cat .ota-previous-image
 curl -fsS http://127.0.0.1:18080/health/live  && echo
 curl -fsS http://127.0.0.1:18080/health/ready && echo
 
-# Public path (the same route devices and monitoring use).
+# Public path on each hostname (the same route devices, operators, and monitoring use).
 curl -fsS https://api.ota-service.example/health/ready && echo
+curl -fsS https://cdn.ota-service.example/health/ready && echo
+curl -fsS https://ota.ota-service.example/health/ready && echo
 
 # MinIO.
 curl -fsS --cacert /opt/ota-service/certs/authority/ota-minio-ca.crt \
@@ -722,8 +728,9 @@ sudo cat ~<your-deploy-user>/.ssh/authorized_keys   # one line per operator key
    passphrase), send the public key to the host administrator, and have it
    appended to the deploy account's `authorized_keys`. Do not receive a private
    key from anyone.
-3. Obtain the deployment's real hostnames, addresses, and port numbers over a
-   secure channel.
+3. Obtain the deployment's real hostnames — the device manifest host, the
+   firmware delivery host, and the administrative host — plus addresses and port
+   numbers, over a secure channel.
 4. GitHub: repository access, plus membership in the `production` Environment if
    you are expected to approve deploys.
 5. Install the `otac` helper and verify step by step:

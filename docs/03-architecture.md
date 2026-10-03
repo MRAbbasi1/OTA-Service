@@ -159,20 +159,25 @@ The `<device-type>` and `<platform>` segments are the device type's `code` and
 
 ## Public Hostnames
 
-Two hostnames front the same application:
+Three hostnames front the same application:
 
 ```text
-api.ota-service.example   manifest retrieval + administrative API
-cdn.ota-service.example   firmware binary delivery
+api.ota-service.example   manifest retrieval (device)
+cdn.ota-service.example   firmware binary delivery (device)
+ota.ota-service.example   administrative API + frontend SPA
 ```
 
 `cdn.ota-service.example` is a delivery hostname of this application — not a static file
 server, not object storage, and never MinIO. Browsing firmware is a
-compatibility and decoupling decision, not a hosting decision: both hostnames
+compatibility and decoupling decision, not a hosting decision: all three hostnames
 terminate on the same Nginx and the same FastAPI process, and the firmware
 endpoint authenticates the device before a byte is emitted. This keeps the door
 open for a future caching CDN in front of the delivery hostname without
 changing anything a device knows.
+
+`ota.ota-service.example` serves the administrative API and the frontend SPA,
+and nothing else. The device hostnames serve only their device routes and the
+health probes, and answer every other path with `404`.
 
 Neither OTA endpoint may redirect, because the device client does not follow
 `3xx` responses. The normative URL model is
@@ -294,6 +299,32 @@ redirect, because neither is supported by the device client.
 
 ---
 
+# Administrative Request Flow
+
+```text
+Admin browser
+  |
+  | HTTPS /api/v1/admin/*
+  v
+Nginx (ota.ota-service.example)
+  |
+  v
+FastAPI
+  |
+  +--> Authenticate session cookie
+  |
+  +--> Authorize capability
+  |
+  +--> Return JSON
+```
+
+The administrative API is served only on the administrative hostname; the
+device-facing hostnames do not route it. The frontend SPA is served from the
+same hostname, so browser calls are same-origin and the API keeps CORS
+disabled.
+
+---
+
 # Security Boundaries
 
 There are three distinct security domains:
@@ -372,7 +403,7 @@ The backend must not remove the manifest signature merely because HTTPS is used.
 
 The existing host Nginx is responsible for:
 
-- TLS termination for both `api.ota-service.example` and `cdn.ota-service.example`
+- TLS termination for all three public hostnames (`api.ota-service.example`, `cdn.ota-service.example`, and `ota.ota-service.example`)
 - virtual-host routing to the API's loopback-only port
 - connection and request handling
 - forwarding client metadata
@@ -438,7 +469,7 @@ MINIO_ENDPOINT
 MINIO_ACCESS_KEY
 MINIO_SECRET_KEY
 MINIO_BUCKET
-OTA_MANIFEST_BASE_URL      # https://api.ota-service.example — manifest route + admin API
+OTA_MANIFEST_BASE_URL      # https://api.ota-service.example — device manifest host
 OTA_FIRMWARE_BASE_URL      # https://cdn.ota-service.example — firmware delivery host
 ADMIN_JWT_SECRET
 ```

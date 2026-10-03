@@ -26,30 +26,35 @@ decision").
 
 ---
 
-# Two Hostnames, One Application
+# Three Hostnames, One Application
 
-The platform exposes two public hostnames:
+The platform exposes three public hostnames:
 
-| Host                      | Purpose                                       | Routes served                                                                       |
-| ------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `api.ota-service.example` | manifest retrieval and the administrative API | `GET /api/v1/firmware/{device_type}/{platform}/manifest.json` and `/api/v1/admin/*` |
-| `cdn.ota-service.example` | firmware binary delivery                      | `GET /firmware/{device_type}/{platform}/v{version}/{filename}`                      |
+| Host                      | Purpose                            | Routes served                                                                 |
+| ------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
+| `api.ota-service.example` | device manifest retrieval          | `GET /api/v1/firmware/{device_type}/{platform}/manifest.json`                 |
+| `cdn.ota-service.example` | firmware binary delivery           | `GET /firmware/{device_type}/{platform}/v{version}/{filename}`                |
+| `ota.ota-service.example` | administrative API + frontend SPA  | `/api/v1/admin/*` and the SPA                                                 |
 
-Both hostnames terminate on the same Nginx instance and proxy to the same
+All three hostnames terminate on the same Nginx instance and proxy to the same
 FastAPI application. `cdn.ota-service.example` is a **delivery hostname of our own
 application**, not a static file server, not a third-party CDN, and never
 MinIO.
 
-Rationale for two hosts while keeping one application:
+Rationale for three hosts while keeping one application:
 
 - the firmware URL and the manifest URL are decoupled, so the firmware host can
   later be fronted by a caching CDN or terminated differently without changing
   the device's provisioned manifest URL;
 - the two surfaces have very different traffic and response characteristics
   (`proxy_buffering off`, no request body, multi-megabyte responses vs. a
-  sub-kilobyte JSON document).
+  sub-kilobyte JSON document);
+- the administrative surface is not reachable from the device hostnames at all,
+  so a device cannot probe the admin API even if it guesses a path; the admin
+  host serves the administrative API and the frontend SPA same-origin, with
+  CORS disabled.
 
-## Mandatory invariants for both hosts
+## Mandatory invariants for the device hosts
 
 1. **The device is authenticated on both endpoints.** Every manifest GET _and_
    every firmware GET carries `X-Device-Serial`, `X-Device-Mac`,
@@ -65,7 +70,7 @@ Rationale for two hosts while keeping one application:
    in `docs/OtaManager.md`) and burns the entire
    five-attempt backoff budget. Therefore: no `301`, `302`, `303`, `307`, or
    `308` on either OTA endpoint, and no fixed-url/object-storage redirect.
-4. **TLS on both hosts** with a certificate chain that ends at the pinned Root
+4. **TLS on both device hosts** with a certificate chain that ends at the pinned Root
    CA, currently **ISRG Root X1 (Let's Encrypt)** ("HTTPS / TLS Support" in
    `docs/OtaManager.md`). A certificate from any other CA breaks every device already in the
    field, because the pinned CA cannot be changed without a firmware release.
@@ -466,6 +471,11 @@ discarded. The documented example is consistent:
 ---
 
 # Serving Rules
+
+The device hostnames serve only the routes documented above. The administrative
+API is served exclusively on `ota.ota-service.example`; `/api/v1/admin/*` on
+`api.ota-service.example` or `cdn.ota-service.example` is not routed and returns
+`404`. Devices have no path to the administrative surface.
 
 ## Manifest
 
