@@ -149,15 +149,22 @@ server {
         proxy_pass http://ota_service_api;
     }
 
+    # Device paths and unknown API paths are never served on this hostname;
+    # they must not fall through to the SPA.
+    location /api/ { return 404; }
+    location /firmware/ { return 404; }
+
     location = /health/live  { proxy_pass http://ota_service_api; }
     location = /health/ready { proxy_pass http://ota_service_api; }
 
     # Frontend SPA — served as static files by the host.
     # The exact document root is a deployment value; adjust before enabling.
+    # `=404` keeps a missing document root a clean 404 instead of a try_files
+    # internal redirection cycle (which nginx reports as 500).
     location / {
         root /var/www/ota-dashboard;
         index index.html;
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ /index.html =404;
     }
 }
 

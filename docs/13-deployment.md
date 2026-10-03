@@ -730,7 +730,9 @@ themselves must never redirect.
 
 The template declares three server blocks. `api.*` and `cdn.*` serve
 device-facing routes only; every other path returns `404`. `ota.*` serves the
-administrative API and the frontend SPA. The device-facing hostnames and the
+administrative API and the frontend SPA, and answers device paths
+(`/api/v1/firmware/`, `/firmware/`) with `404` as well, so they never fall
+through to the SPA. The device-facing hostnames and the
 administrative hostname share one certificate and one Nginx instance, but
 distinct server blocks. The `ota.*` block raises `client_max_body_size` so
 administrative firmware uploads can pass; the device hostnames keep a small
