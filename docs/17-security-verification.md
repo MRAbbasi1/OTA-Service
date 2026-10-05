@@ -61,7 +61,9 @@ All items below were verified in a production deployment of this stack.
 | Storage reachability                            | **Verified** — MinIO is not publicly reachable.                                                                                                                                      |
 | Host firewall integration                       | **Verified** — UFW is active and `ufw-docker` is installed, so container publishes cannot bypass UFW.                                                                                |
 | Ban handling on the host                        | **Verified** — fail2ban runs, and CI runner bans are cleared with `fail2ban-client unban --all`.                                                                                     |
-| Health endpoints from the Internet              | **Verified** — `/health/live` and `/health/ready` answer through the public listener.                                                                                                |
+| Health endpoints from the Internet              | **Verified** — the role-aware `/health` route answers `200` on all three hostnames; `/health/live`, `/health/ready`, and `/health/detail` answer `404` from the public listener and remain reachable only on loopback. |
+| Health body carries no internal detail          | **Verified** — the public `/health` body is exactly `{"status":"ok"}` or `{"status":"unavailable"}`; the string `database`, `minio`, `object_storage`, or `dependencies` never appears.                                |
+| Device routes are absent from the admin hostname | **Verified** — `/api/v1/firmware/*` and `/firmware/*` answer `404` on `ota.*`.                                                                                                        |
 | Administrative API is reachable only on the administrative hostname | **Verified** — `/api/v1/admin/*` returns `404` on `api.*` and `cdn.*`, and `401` (without session) on `ota.*`. |
 
 The host-side configuration these items depend on is specified in "Firewall" in

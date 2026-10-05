@@ -212,7 +212,13 @@ They are what the container healthcheck and an operator over SSH use directly.
 The `ota-health` CLI reads `deploy/health.toml` and is the project's single
 source of truth for reachability checks; the deploy script, CI, and an operator
 over SSH all use it. Its exit codes are `0` (all probes ok), `1` (at least one
-probe unavailable), and `2` (the CLI could not run).
+probe unavailable), and `2` (the CLI could not run). The `internal` subcommand
+runs from a one-off container on the private Compose network and is what the
+deploy script uses for its readiness gate; the `public` subcommand runs on a
+workstation or on the CI runner, where public DNS is available, and is what an
+operator uses to confirm the deployment from outside. Neither replaces the
+other: the internal view has detail a public probe cannot safely expose, and
+the public view proves reachability that the container cannot observe.
 
 Liveness checks application process health.
 

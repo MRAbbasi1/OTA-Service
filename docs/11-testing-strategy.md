@@ -19,6 +19,7 @@ Testing must verify:
 Unit Tests
 Integration Tests
 API Tests
+CLI Tests
 Contract Tests
 Security Tests
 End-to-End Tests
@@ -254,6 +255,25 @@ error handling
 pagination
 filtering
 ```
+
+---
+
+# CLI Tests
+
+The `ota-health` CLI is covered by `tests/test_cli_health.py`:
+
+- the `probe()` helper returns `ok`, `unavailable`, or `error` for the three
+  HTTP outcomes and never raises;
+- `format_text` and `format_json` produce the documented shapes;
+- `cmd_public` returns `EXIT_OK` when every probe succeeds, `EXIT_UNHEALTHY`
+  when any fails, and `EXIT_USAGE` when the config is missing;
+- `cmd_public` also probes the dashboard URL when the `[dashboard]` section
+  exists and skips it when the section is absent;
+- `cmd_internal` returns `EXIT_OK` when every endpoint answers `200` and
+  `EXIT_UNHEALTHY` otherwise;
+- the parser requires `--config` for `public` and `--url` for `internal`.
+
+The HTTP layer is patched in tests; no real network calls are made.
 
 ---
 

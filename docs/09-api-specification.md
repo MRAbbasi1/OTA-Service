@@ -14,20 +14,26 @@ Each public hostname serves a single role:
 ```text
 api.<your-domain>
     /api/v1/firmware/{device_type}/{platform}/manifest.json   device manifest
-    /health/live                                              liveness
-    /health/ready                                             readiness
+    /health                                                   public reachability probe (role: api)
 
 cdn.<your-domain>
     /firmware/{device_type}/{platform}/v{version}/{filename}  firmware binary
-    /health/live
-    /health/ready
+    /health                                                   public reachability probe (role: cdn)
 
 ota.<your-domain>
     /api/v1/admin/*                                           administrative API
     /                                                         frontend SPA
-    /health/live
-    /health/ready
+    /health                                                   public reachability probe (role: ota)
 ```
+
+The `/health` route on each hostname returns only `{"status":"ok"}` or
+`{"status":"unavailable"}`. It names no dependency, no version, and no
+hostname: Nginx marks the proxied request with `X-OTA-Role`, and the API
+checks only the dependencies that role needs. The internal probes
+(`/health/live`, `/health/ready`, `/health/detail`) are reachable only on
+loopback and are not proxied by Nginx; from the Internet they answer `404`.
+See `docs/12-observability.md` for the two surfaces and
+`docs/18-operations.md` for the `ota-health` CLI that probes them.
 
 The device-facing route shape is fixed by the firmware contract; the complete
 URL model is `docs/16-update-path-and-publication.md`. The administrative API is

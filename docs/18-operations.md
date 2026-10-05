@@ -61,6 +61,8 @@ otac() {
 | `otac exec postgres psql -U ota -d ota` | interactive SQL                |
 | `otac run --rm api alembic current`     | migration state                |
 | `otac run --rm api ota-admin`           | bootstrap command (idempotent) |
+| `otac run --rm --no-deps --entrypoint ota-health api internal --url http://api:8000` | internal health, the readiness gate's own check |
+| `otac run --rm --no-deps --entrypoint ota-health api public --config /opt/ota-service/deploy/health.toml` | public health — will fail inside a container (no public DNS); run from the workstation instead |
 
 Rules:
 
@@ -598,13 +600,75 @@ named volumes. `down -v` destroys them and is never used on production.
 
 ### Endpoints
 
-| Endpoint        | Meaning                                   | Consumers                          |
-| --------------- | ----------------------------------------- | ---------------------------------- |
-| `/health/live`  | process is up; touches no dependency      | container healthcheck, host probes |
-| `/health/ready` | database and object storage are reachable | deploy gate, monitoring            |
+The API exposes two health surfaces with different audiences: a public one for
+routers and monitoring, and an internal one for operators.
 
-Both endpoints are served through all three public hostnames and on the loopback
-port `127.0.0.1:18080`.
+**Public — one route per hostname, reachable from the Internet:**
+
+| Endpoint                     | Role  | Dependencies checked |
+| ---------------------------- | ----- | -------------------- |
+| `https://api.<domain>/health` | api   | PostgreSQL           |
+| `https://cdn.<domain>/health` | cdn   | MinIO                |
+| `https://ota.<domain>/health` | ota   | PostgreSQL + MinIO   |
+
+The body is always exactly `{"status":"ok"}` or `{"status":"unavailable"}`. It
+names no dependency, no version, and no hostname. Nginx marks the request with
+`X-OTA-Role`, and the API checks only the dependencies that role needs. A
+MinIO outage therefore does not make the manifest host report itself
+unhealthy.
+
+**Internal — loopback only, not proxied by Nginx:**
+
+| Endpoint         | Meaning                                            | Consumers                          |
+| ---------------- | -------------------------------------------------- | ---------------------------------- |
+| `/health/live`   | process is up; touches no dependency               | container healthcheck, host probes |
+| `/health/ready`  | database and object storage are reachable          | deploy gate, host-side monitoring  |
+| `/health/detail` | the same, plus `environment` and `app_version`     | operator over SSH                  |
+
+Reachable on `127.0.0.1:18080` from the host, or on `http://api:8000` from
+inside the Compose network. From the public Internet, all three answer `404`.
+
+The `ota-health` CLI is the project's single source of truth for reachability
+checks. It runs the same probes the CI, the deploy script, and an operator use:
+
+| Command                                                                                                            | Where it runs                        | What it checks                                              |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------- |
+| `otac run --rm --no-deps --entrypoint ota-health api internal --url http://api:8000`                              | server, one-off container            | `/health/live`, `/health/ready`, `/health/detail`           |
+| `uv run ota-health public --config deploy/health.toml`                                                            | workstation or CI runner             | the three public `/health` URLs                             |
+| `otac run --rm --no-deps --entrypoint ota-health api version`                                                     | server, one-off container            | the deployed application version                            |
+
+The CLI accepts `--format text` (default), `--format json`, and `--quiet`. Exit
+codes are `0` (all ok), `1` (at least one unavailable), `2` (usage error).
+
+`ota-health public` cannot run from inside the container: it needs public DNS
+and reads a config file that is deliberately not mounted into the container.
+`ota-health internal` cannot run from a workstation: it needs to reach
+`http://api:8000` or `127.0.0.1:18080`.
+
+To save typing, install two aliases. On the server, add to `~/.bashrc`:
+
+```bash
+otahealth() {
+  otac run --rm --no-deps --entrypoint ota-health api internal \
+    --url http://api:8000 "$@"
+}
+```
+
+Then `otahealth` prints the internal health, `otahealth --format json` prints
+it as JSON, and `otahealth --quiet && echo OK` proves the stack is up in a
+script.
+
+On the workstation, add to `~/.zshrc` or `~/.bashrc`:
+
+```bash
+otapub() {
+  ( cd ~/path/to/OTA-Service
+    uv run ota-health public --config /tmp/health-real.toml "$@" )
+}
+```
+
+with `/tmp/health-real.toml` carrying the deployment's three real `/health`
+URLs.
 
 ### Routine checks
 
@@ -617,16 +681,14 @@ cd /opt/ota-service
 otac ps
 cat .ota-previous-image
 
-# Application and dependencies (loopback).
-curl -fsS http://127.0.0.1:18080/health/live  && echo
-curl -fsS http://127.0.0.1:18080/health/ready && echo
+# Internal health — process, dependencies, and version.
+otahealth
 
-# Public path on each hostname (the same route devices, operators, and monitoring use).
-curl -fsS https://api.ota-service.example/health/ready && echo
-curl -fsS https://cdn.ota-service.example/health/ready && echo
-curl -fsS https://ota.ota-service.example/health/ready && echo
+# Public reachability from the workstation (the same route a router or an
+# external monitor uses). Run this from your laptop, not from the server.
+otapub
 
-# MinIO.
+# MinIO, over the internal CA on loopback.
 curl -fsS --cacert /opt/ota-service/certs/authority/ota-minio-ca.crt \
   https://127.0.0.1:9000/minio/health/live && echo
 
@@ -636,18 +698,24 @@ df -h / && docker system df
 
 ### External monitoring
 
-- Uptime: poll `https://api.ota-service.example/health/ready` from an external
-  monitor. It is the one endpoint that proves the whole dependency chain. Alert
-  after two consecutive failures.
+- Uptime: poll `https://api.<domain>/health` and `https://ota.<domain>/health`
+  from an external monitor. A `200` is healthy; a `503` is not. Alert after two
+  consecutive failures. Do not poll `/health/live`, `/health/ready`, or
+  `/health/detail` — those return `404` from the Internet by design.
+- The `cdn.<domain>/health` route is reachable from within the target country
+  and by the fleet, but is deliberately excluded from the CI deploy gate because
+  a GitHub-hosted runner outside that country may not reach the CDN. Monitor it
+  from a location the CDN serves.
 - Deploys: watch GitHub Actions notifications; a failed deploy job is the
   earliest signal.
-- TLS expiry: certbot renews automatically. Alert when fewer than 21 days remain
-  on the public certificate.
+- TLS expiry: certbot renews automatically. Alert when fewer than 21 days
+  remain on the public certificate.
 - Disk: alert above 80% on `/`.
 - fail2ban: rising ban counts indicate scanning; review weekly.
 
 There is no bundled metrics stack by design (see `docs/12-observability.md`).
-Structured application logs plus an external uptime probe are the baseline.
+Structured application logs plus an external uptime probe on `/health` are the
+baseline.
 
 ### Log review
 

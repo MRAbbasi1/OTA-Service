@@ -184,8 +184,9 @@ Environment `production` with required reviewers and `packages: read`.
 
 2. Copy the deployment bundle to the host: `compose.production.yaml`,
    `deploy/production-deploy.sh`, `deploy/certs/generate-minio-tls-material.sh`,
-   `deploy/nginx/ota-service.conf.example`, `deploy/health.toml`,
-   `deploy/env.production.example`.
+   `deploy/nginx/ota-service.conf.example`, `deploy/env.production.example`.
+   `deploy/health.toml` is deliberately not synced: the operator's copy on the
+   host is authoritative, and CI does not read it.
 
 3. Log the host into GHCR with the short-lived `GITHUB_TOKEN`
    (`docker login ghcr.io -u <actor> --password-stdin`), then run:
@@ -203,7 +204,13 @@ Environment `production` with required reviewers and `packages: read`.
    as an artifact retained for 14 days: `docker compose ps -a`, the last 200 log
    lines of `api postgres minio`, and the current state-file value.
 
-5. Always log the host out of GHCR after the job (`docker logout ghcr.io`).
+5. On success, probe the public `/health` routes from the runner (not from
+   inside a container). The runner has public DNS; the API container does not.
+   Only `api.*` and `ota.*` are checked. `cdn.*` sits behind a CDN that does
+   not reliably serve a runner outside the target country, so it is excluded
+   from the gate; it is monitored separately from within the CDN's coverage.
+
+6. Always log the host out of GHCR after the job (`docker logout ghcr.io`).
 
 The workflow never writes runtime secrets into the host `.env`.
 
@@ -234,6 +241,8 @@ Create Environment `production` with required reviewers.
 | `PRODUCTION_KNOWN_HOSTS`   | output of `ssh-keyscan -H <your-server-ip>`        |
 | `PRODUCTION_DEPLOY_PATH`   | e.g. `/opt/ota-service`                            |
 | `PRODUCTION_READINESS_URL` | e.g. `http://127.0.0.1:18080/health/ready`         |
+| `PRODUCTION_API_HEALTH_URL` | `https://api.<domain>/health` — post-deploy reachability check |
+| `PRODUCTION_OTA_HEALTH_URL` | `https://ota.<domain>/health` — post-deploy reachability check |
 
 ### Host `.env` only (never in GitHub)
 
@@ -356,6 +365,7 @@ and the value of `.ota-previous-image`.
 | Deploy hangs waiting for services, or `--wait` fails                              | MinIO publishes no health, so `--wait` cannot succeed      | nothing to fix in the workflow; see "Database Migrations" in `docs/13-deployment.md` for the migration step and "Troubleshooting" in `docs/18-operations.md` for a hung host |
 | Deploy fails with `denied: denied` while pulling the image on the host            | GHCR login missing or expired, or `packages: read` missing | keep the workflow's `docker login` with `GITHUB_TOKEN` and check job permissions                                                                                             |
 | Deploy reports that it rolled back                                                | the new image failed `/health/ready`                       | inspect `deploy-diagnostics-<sha>` and fix forward; the previous image is already running                                                                                    |
+| Post-deploy public health fails on `cdn.*`  | the CDN does not serve a GitHub-hosted runner outside the target country | by design — the gate covers `api` and `ota`; monitor `cdn` from a location the CDN serves |
 
 For failures on the host rather than in the pipeline, use "Troubleshooting" in
 `docs/18-operations.md`, which covers database, storage, and container faults

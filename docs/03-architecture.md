@@ -176,8 +176,9 @@ open for a future caching CDN in front of the delivery hostname without
 changing anything a device knows.
 
 `ota.ota-service.example` serves the administrative API and the frontend SPA,
-and nothing else. The device hostnames serve only their device routes and the
-health probes, and answer every other path with `404`.
+and nothing else. The device hostnames serve only their device routes and the public `/health`
+reachability probe, and answer every other path with `404`. The internal probes
+(`/health/live`, `/health/ready`, `/health/detail`) are loopback-only.
 
 Neither OTA endpoint may redirect, because the device client does not follow
 `3xx` responses. The normative URL model is

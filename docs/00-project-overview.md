@@ -198,6 +198,15 @@ FastAPI is responsible for:
 - MinIO interaction
 - device authentication before manifest or firmware delivery
 
+The project ships a health CLI (`ota-health`) that runs against a deployed
+instance. It probes the role-aware public `/health` route from any machine with
+public DNS, and the loopback-only `/health/live`, `/health/ready`, and
+`/health/detail` routes from the host or from inside the Compose network. The
+same CLI is used by the deploy script for its readiness gate and by CI for the
+post-deploy reachability check, so an operator, the pipeline, and an external
+monitor all observe the same health model. See `docs/18-operations.md` for the
+commands.
+
 PostgreSQL is responsible for durable relational state.
 
 MinIO is responsible for private firmware binary and manifest storage. Binary

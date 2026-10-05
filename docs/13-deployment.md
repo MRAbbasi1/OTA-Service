@@ -615,9 +615,6 @@ services:
       - "127.0.0.1:${OTA_BIND_PORT:-18080}:8000"
     volumes:
       - ${OTA_MINIO_CA_CERT:-/opt/ota-service/certs/authority/ota-minio-ca.crt}:/etc/ota/certs/ota-minio-ca.crt:ro
-      # ota-health runs as a one-off container from this service and reads the
-      # deployment's probe URLs; host and container paths are identical.
-      - ${OTA_HEALTH_CONFIG:-/opt/ota-service/deploy/health.toml}:${OTA_HEALTH_CONFIG:-/opt/ota-service/deploy/health.toml}:ro
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -653,9 +650,6 @@ Details that matter operationally:
   always an immutable image from GHCR, referenced by the `OTA_IMAGE` variable.
 - `read_only: true` plus `tmpfs: /tmp` means nothing is persisted in the API
   container; logs go to stdout and are read with `docker compose logs`.
-- `api` mounts `deploy/health.toml` read-only so the one-off `ota-health`
-  containers can read their probe configuration. Set `OTA_HEALTH_CONFIG` when
-  the deployment does not live at `/opt/ota-service`.
 - `--workers 1` is explicit. Rate-limit counters are held in process memory, so a
   second worker would multiply every quota by the worker count; scale out only
   after rate-limit state is shared.
