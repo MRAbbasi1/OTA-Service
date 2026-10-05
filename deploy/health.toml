@@ -1,0 +1,27 @@
+# Configuration for the `ota-health` CLI.
+#
+# This file carries only URLs. No secret, token, hostname, or credential may
+# ever be written here: the file is meant to be committed, copied between
+# environments, and read by anyone who can run the CLI. If a future version of
+# /health/detail requires a bearer token, that token lives in an environment
+# variable (OTA_HEALTH_TOKEN) and never in this file.
+#
+# Per-deployment values are edited in the deployed copy at
+# /opt/ota-service/deploy/health.toml; this template ships with placeholder
+# hostnames so a new deployment has a working starting point.
+
+[public]
+# One entry per public hostname. The CLI probes each URL with a plain GET and
+# treats a 200 as healthy and anything else as unavailable.
+api = "https://api.ota-service.example/health"
+cdn = "https://cdn.ota-service.example/health"
+ota = "https://ota.ota-service.example/health"
+
+[dashboard]
+# Optional. When present, the CLI also probes this URL and requires a 200.
+# Delete the section in a deployment with no dashboard yet.
+url = "https://ota.ota-service.example/"
+
+[thresholds]
+# Request timeout, in seconds, applied to every probe.
+timeout_seconds = 5

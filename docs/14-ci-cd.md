@@ -184,7 +184,8 @@ Environment `production` with required reviewers and `packages: read`.
 
 2. Copy the deployment bundle to the host: `compose.production.yaml`,
    `deploy/production-deploy.sh`, `deploy/certs/generate-minio-tls-material.sh`,
-   `deploy/nginx/ota-service.conf.example`, `deploy/env.production.example`.
+   `deploy/nginx/ota-service.conf.example`, `deploy/health.toml`,
+   `deploy/env.production.example`.
 
 3. Log the host into GHCR with the short-lived `GITHUB_TOKEN`
    (`docker login ghcr.io -u <actor> --password-stdin`), then run:

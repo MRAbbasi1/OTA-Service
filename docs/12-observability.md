@@ -161,12 +161,58 @@ Thresholds must be configurable.
 
 # Health Endpoints
 
-Recommended:
+The API exposes two health surfaces with different audiences: a public one for
+routers and monitoring, and an internal one for operators.
+
+## Public surface — one route per hostname
+
+Nginx marks each proxied probe with `X-OTA-Role`, so the same `/health` route
+answers for all three hostnames. The body is always exactly one of two JSON
+strings:
 
 ```http
-GET /health/live
-GET /health/ready
+GET https://api.<domain>/health   ->  {"status":"ok"} or {"status":"unavailable"}
+GET https://cdn.<domain>/health   ->  same
+GET https://ota.<domain>/health   ->  same
 ```
+
+| Hostname       | Role  | Dependencies checked |
+| -------------- | ----- | -------------------- |
+| `api.<domain>` | `api` | PostgreSQL           |
+| `cdn.<domain>` | `cdn` | MinIO                |
+| `ota.<domain>` | `ota` | PostgreSQL + MinIO   |
+
+No dependency name, no version, no hostname, and no error string ever appears in
+the public body: it is served from the Internet and carries exactly as much
+information as a load balancer needs. A request without the `X-OTA-Role` header
+— a direct loopback call or a container healthcheck — is treated as `ota`, the
+strictest role.
+
+The dashboard SPA is deliberately not part of the API's role check. Nginx
+serves the frontend, not the API, so the API cannot truthfully report on it;
+`ota-health public` checks the dashboard URL from `deploy/health.toml` instead.
+Consequently, losing MinIO does not make the manifest host report itself
+unhealthy, and a broken dashboard does not make the administrative API report
+itself unhealthy.
+
+## Internal surface — loopback only
+
+Nginx does not proxy these routes. They are reachable only from the host or from
+inside the Compose network, and they are allowed to name their dependencies:
+
+```http
+GET /health/live    ->  {"status":"ok"}
+GET /health/ready   ->  {"status":"ok","dependencies":{"database":"ok","object_storage":"ok"}}
+GET /health/detail  ->  {"status":"ok","environment":"production","app_version":"...",
+                         "dependencies":{"database":"ok","object_storage":"ok"}}
+```
+
+They are what the container healthcheck and an operator over SSH use directly.
+
+The `ota-health` CLI reads `deploy/health.toml` and is the project's single
+source of truth for reachability checks; the deploy script, CI, and an operator
+over SSH all use it. Its exit codes are `0` (all probes ok), `1` (at least one
+probe unavailable), and `2` (the CLI could not run).
 
 Liveness checks application process health.
 

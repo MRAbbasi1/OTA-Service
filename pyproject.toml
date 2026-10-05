@@ -21,6 +21,7 @@ dependencies = [
 # Deployment command: creates the first SUPER_ADMIN from one-time environment
 # credentials, idempotently and with an audit record.
 ota-admin = "app.cli.bootstrap_admin:main"
+ota-health = "app.cli.health:main"
 
 [build-system]
 requires = ["hatchling"]

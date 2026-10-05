@@ -79,6 +79,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups --frozen
 
+      - name: CLI smoke
+        run: uv run ota-health version
+
       - name: Ruff lint
         run: uv run ruff check .
 
@@ -245,7 +248,7 @@ jobs:
             "$USER@$HOST:$PATH_ON_HOST/deploy/certs/"
           scp deploy/nginx/ota-service.conf.example \
             "$USER@$HOST:$PATH_ON_HOST/deploy/nginx/"
-          scp deploy/env.production.example \
+          scp deploy/health.toml deploy/env.production.example \
             "$USER@$HOST:$PATH_ON_HOST/deploy/"
           ssh "$USER@$HOST" \
             "chmod 700 '$PATH_ON_HOST/production-deploy.sh' \
@@ -271,6 +274,18 @@ jobs:
              OTA_IMAGE='$IMAGE' \
              OTA_READINESS_URL='$READINESS_URL' \
              ./production-deploy.sh '$IMAGE'"
+
+      - name: Post-deploy public health
+        if: success()
+        env:
+          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          USER: ${{ secrets.PRODUCTION_SSH_USER }}
+          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+        run: |
+          ssh "$USER@$HOST" "cd '$PATH_ON_HOST' && \
+            docker compose --env-file .env -f compose.production.yaml run --rm --no-deps \
+              --entrypoint ota-health api public \
+              --config '$PATH_ON_HOST/deploy/health.toml' --format json"
 
       - name: Collect remote diagnostics on failure
         if: failure()

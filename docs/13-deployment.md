@@ -615,6 +615,9 @@ services:
       - "127.0.0.1:${OTA_BIND_PORT:-18080}:8000"
     volumes:
       - ${OTA_MINIO_CA_CERT:-/opt/ota-service/certs/authority/ota-minio-ca.crt}:/etc/ota/certs/ota-minio-ca.crt:ro
+      # ota-health runs as a one-off container from this service and reads the
+      # deployment's probe URLs; host and container paths are identical.
+      - ${OTA_HEALTH_CONFIG:-/opt/ota-service/deploy/health.toml}:${OTA_HEALTH_CONFIG:-/opt/ota-service/deploy/health.toml}:ro
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -650,6 +653,9 @@ Details that matter operationally:
   always an immutable image from GHCR, referenced by the `OTA_IMAGE` variable.
 - `read_only: true` plus `tmpfs: /tmp` means nothing is persisted in the API
   container; logs go to stdout and are read with `docker compose logs`.
+- `api` mounts `deploy/health.toml` read-only so the one-off `ota-health`
+  containers can read their probe configuration. Set `OTA_HEALTH_CONFIG` when
+  the deployment does not live at `/opt/ota-service`.
 - `--workers 1` is explicit. Rate-limit counters are held in process memory, so a
   second worker would multiply every quota by the worker count; scale out only
   after rate-limit state is shared.
@@ -738,10 +744,20 @@ distinct server blocks. The `ota.*` block raises `client_max_body_size` so
 administrative firmware uploads can pass; the device hostnames keep a small
 limit.
 
-The frontend SPA is served as static files by the host. The template uses
-`/var/www/ota-dashboard` as the document root; replace it with the real build
-output path before enabling the SPA. If the frontend has not been built yet,
-leave the path as is — only the `ota.*` hostname is affected.
+Each block proxies a single public `location = /health` probe to the API, marked
+with `X-OTA-Role` (`api`, `cdn`, or `ota`), so the API checks only the
+dependencies that role needs: PostgreSQL for `api.*`, MinIO for `cdn.*`, and
+both for `ota.*`. The detailed internal probes (`/health/live`, `/health/ready`,
+`/health/detail`) are deliberately not proxied by Nginx and remain reachable
+only from the host or from inside the Compose network.
+
+The API does not inspect the frontend build, so the API container no longer
+mounts the dashboard directory. Nginx serves the SPA as static files, and
+`ota-health public` checks the dashboard's own URL from `deploy/health.toml`
+(see `docs/12-observability.md`). The template uses `/var/www/ota-dashboard` as
+the document root; replace it with the real build output path before enabling
+the SPA. If the frontend has not been built yet, leave the path as is — only
+the `ota.*` hostname is affected.
 
 OTA-specific requirements:
 
@@ -798,11 +814,11 @@ OTA_IMAGE="$(cat .ota-previous-image)" \
   alembic upgrade head
 ```
 
-Use `compose run --rm api` without `--no-deps`: the migration container must be
-attached to the private Compose network so that the `postgres` service name
-resolves. With `--no-deps` the service DNS names are not available and the
-migration fails with a name-resolution error. The deploy script and the workflow
-both use the same form.
+The migration container must be attached to the private Compose network so that
+the `postgres` service name resolves. `compose run` attaches the one-off
+container to the service's networks; `--no-deps` only skips *starting* the
+dependencies, so it is usable here because the deploy script starts postgres and
+minio first. The deploy script and the workflow both use the same form.
 
 Application startup must not run destructive migrations, and `read_only: true`
 means it could not write migration state into the image anyway.

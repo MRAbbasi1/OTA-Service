@@ -54,8 +54,16 @@ server {
         proxy_pass http://ota_service_api;
     }
 
-    location = /health/live  { proxy_pass http://ota_service_api; }
-    location = /health/ready { proxy_pass http://ota_service_api; }
+    # Public reachability probe. The role marker tells the API which
+    # dependencies to check, so a MinIO outage does not make the manifest host
+    # report itself unhealthy. The detailed probes (/health/live,
+    # /health/ready, /health/detail) are loopback-only by design and are
+    # deliberately not proxied here; they are reachable only from the host.
+    location = /health {
+        proxy_pass http://ota_service_api/health;
+        proxy_set_header X-OTA-Role "api";
+    }
+    location /health/ { return 404; }
 
     # No other route exists on this hostname.
     location / {
@@ -103,8 +111,16 @@ server {
         proxy_pass http://ota_service_api;
     }
 
-    location = /health/live  { proxy_pass http://ota_service_api; }
-    location = /health/ready { proxy_pass http://ota_service_api; }
+    # Public reachability probe. The role marker tells the API which
+    # dependencies to check, so a MinIO outage does not make the manifest host
+    # report itself unhealthy. The detailed probes (/health/live,
+    # /health/ready, /health/detail) are loopback-only by design and are
+    # deliberately not proxied here; they are reachable only from the host.
+    location = /health {
+        proxy_pass http://ota_service_api/health;
+        proxy_set_header X-OTA-Role "cdn";
+    }
+    location /health/ { return 404; }
 
     location / {
         return 404;
@@ -154,8 +170,16 @@ server {
     location /api/ { return 404; }
     location /firmware/ { return 404; }
 
-    location = /health/live  { proxy_pass http://ota_service_api; }
-    location = /health/ready { proxy_pass http://ota_service_api; }
+    # Public reachability probe. The role marker tells the API which
+    # dependencies to check, so a MinIO outage does not make the manifest host
+    # report itself unhealthy. The detailed probes (/health/live,
+    # /health/ready, /health/detail) are loopback-only by design and are
+    # deliberately not proxied here; they are reachable only from the host.
+    location = /health {
+        proxy_pass http://ota_service_api/health;
+        proxy_set_header X-OTA-Role "ota";
+    }
+    location /health/ { return 404; }
 
     # Frontend SPA — served as static files by the host.
     # The exact document root is a deployment value; adjust before enabling.
@@ -166,13 +190,4 @@ server {
         index index.html;
         try_files $uri $uri/ /index.html =404;
     }
-}
-
-# ---------------------------------------------------------------------------
-# HTTP → HTTPS redirect for all three hostnames
-# ---------------------------------------------------------------------------
-server {
-    listen 80;
-    server_name api.ota-service.example cdn.ota-service.example ota.ota-service.example;
-    return 301 https://$host$request_uri;
 }

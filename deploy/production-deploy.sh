@@ -65,8 +65,11 @@ wait_ready() {
   local label="$1"
   local attempt
   for attempt in $(seq 1 45); do
-    if curl --fail --silent --show-error --max-time 5 \
-      "$READINESS_URL" >/dev/null; then
+    # The CLI runs inside a one-off container on the private Compose network,
+    # so it reaches the API by service name; the host's published loopback port
+    # (127.0.0.1:18080) does not exist inside that container's network namespace.
+    if ( cd "$DEPLOY_PATH" && compose run --rm --no-deps --entrypoint ota-health api internal \
+        --url "http://api:8000" --quiet ); then
       log "${label}: readiness OK (attempt ${attempt})"
       return 0
     fi
@@ -130,6 +133,10 @@ for attempt in $(seq 1 30); do
 done
 
 wait_ready "deploy"
+
+log "public health:"
+compose run --rm --no-deps --entrypoint ota-health api public \
+  --config /opt/ota-service/deploy/health.toml || true
 
 printf '%s\n' "$IMAGE_TAG" >"$STATE_FILE"
 trap - ERR
