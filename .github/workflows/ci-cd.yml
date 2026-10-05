@@ -248,7 +248,7 @@ jobs:
             "$USER@$HOST:$PATH_ON_HOST/deploy/certs/"
           scp deploy/nginx/ota-service.conf.example \
             "$USER@$HOST:$PATH_ON_HOST/deploy/nginx/"
-          scp deploy/health.toml deploy/env.production.example \
+          scp deploy/env.production.example \
             "$USER@$HOST:$PATH_ON_HOST/deploy/"
           ssh "$USER@$HOST" \
             "chmod 700 '$PATH_ON_HOST/production-deploy.sh' \
@@ -279,12 +279,14 @@ jobs:
         if: success()
         env:
           OTA_API_HEALTH: ${{ secrets.PRODUCTION_API_HEALTH_URL }}
-          OTA_CDN_HEALTH: ${{ secrets.PRODUCTION_CDN_HEALTH_URL }}
-          OTA_DASHBOARD_HEALTH: ${{ secrets.PRODUCTION_DASHBOARD_HEALTH_URL }}
+          OTA_OTA_HEALTH: ${{ secrets.PRODUCTION_OTA_HEALTH_URL }}
         run: |
           set -euo pipefail
-          # Only the three /health endpoints; the dashboard is not deployed yet.
-          for url in "$OTA_API_HEALTH" "$OTA_CDN_HEALTH" "$OTA_DASHBOARD_HEALTH"; do
+          # The cdn hostname sits behind a CDN whose reachability from a
+          # GitHub-hosted runner outside the target country is not guaranteed,
+          # so it is excluded from the deploy gate. The api and ota hostnames
+          # both reach the origin directly and are the ones CI can verify.
+          for url in "$OTA_API_HEALTH" "$OTA_OTA_HEALTH"; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url")
             printf '%-40s -> %s\n' "$url" "$code"
             if [ "$code" != "200" ]; then

@@ -134,10 +134,6 @@ done
 
 wait_ready "deploy"
 
-log "public health:"
-compose run --rm --no-deps --entrypoint ota-health api public \
-  --config /opt/ota-service/deploy/health.toml || true
-
 printf '%s\n' "$IMAGE_TAG" >"$STATE_FILE"
 trap - ERR
 log "deployment succeeded: ${IMAGE_TAG}"

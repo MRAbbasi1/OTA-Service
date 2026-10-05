@@ -78,10 +78,6 @@ services:
       - "127.0.0.1:${OTA_BIND_PORT:-18080}:8000"
     volumes:
       - ${OTA_MINIO_CA_CERT:-/opt/ota-service/certs/authority/ota-minio-ca.crt}:/etc/ota/certs/ota-minio-ca.crt:ro
-      # ota-health runs as a one-off container from this service and reads the
-      # deployment's probe URLs. Host and container paths are identical, so the
-      # deploy script and CI can pass the host path unchanged.
-      - ${OTA_HEALTH_CONFIG:-/opt/ota-service/deploy/health.toml}:${OTA_HEALTH_CONFIG:-/opt/ota-service/deploy/health.toml}:ro
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
