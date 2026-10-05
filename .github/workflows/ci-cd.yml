@@ -278,14 +278,20 @@ jobs:
       - name: Post-deploy public health
         if: success()
         env:
-          HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
-          USER: ${{ secrets.PRODUCTION_SSH_USER }}
-          PATH_ON_HOST: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          OTA_API_HEALTH: ${{ secrets.PRODUCTION_API_HEALTH_URL }}
+          OTA_CDN_HEALTH: ${{ secrets.PRODUCTION_CDN_HEALTH_URL }}
+          OTA_DASHBOARD_HEALTH: ${{ secrets.PRODUCTION_DASHBOARD_HEALTH_URL }}
         run: |
-          ssh "$USER@$HOST" "cd '$PATH_ON_HOST' && \
-            docker compose --env-file .env -f compose.production.yaml run --rm --no-deps \
-              --entrypoint ota-health api public \
-              --config '$PATH_ON_HOST/deploy/health.toml' --format json"
+          set -euo pipefail
+          # Only the three /health endpoints; the dashboard is not deployed yet.
+          for url in "$OTA_API_HEALTH" "$OTA_CDN_HEALTH" "$OTA_DASHBOARD_HEALTH"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url")
+            printf '%-40s -> %s\n' "$url" "$code"
+            if [ "$code" != "200" ]; then
+              echo "public probe failed: $url returned $code" >&2
+              exit 1
+            fi
+          done
 
       - name: Collect remote diagnostics on failure
         if: failure()
