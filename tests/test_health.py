@@ -179,7 +179,7 @@ class TestInternalDetail:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ok"
-        assert body["environment"] == "development"
+        assert body["environment"] == anonymous_client.app.state.settings.environment
         assert body["app_version"]
         assert set(body["dependencies"]) == {"database", "object_storage"}
         assert body["dependencies"] == {"database": "ok", "object_storage": "ok"}
