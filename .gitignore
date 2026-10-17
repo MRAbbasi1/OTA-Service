@@ -1,0 +1,141 @@
+# OTA-Service backend
+#
+# This file excludes machine-local state, secrets, generated output, and
+# operator-only material. Source code, migrations, lockfiles, deployment
+# templates, and example configuration remain version-controlled.
+
+# -----------------------------------------------------------------------------
+# Python bytecode, environments, and packaging output
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+.venv/
+venv/
+env/
+ENV/
+
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# -----------------------------------------------------------------------------
+# Tests, coverage, static analysis, and tool caches
+# -----------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.tox/
+.nox/
+
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+.ruff_cache/
+
+# Local workspace/tool state; never part of the product repository.
+.cache/
+
+# -----------------------------------------------------------------------------
+# Environment files, credentials, and cryptographic material
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+secrets/
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# -----------------------------------------------------------------------------
+# Local services, databases, object storage, and runtime state
+# -----------------------------------------------------------------------------
+docker-data/
+docker-volumes/
+postgres-data/
+postgresql-data/
+minio-data/
+storage-data/
+
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql
+
+# -----------------------------------------------------------------------------
+# Logs, temporary files, and crash output
+# -----------------------------------------------------------------------------
+logs/
+*.log
+*.log.*
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+/core
+/core.*
+
+# -----------------------------------------------------------------------------
+# IDE and operating-system metadata
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.iml
+
+.DS_Store
+*.DS_Store
+Thumbs.db
+Desktop.ini
+
+# -----------------------------------------------------------------------------
+# Firmware, signing, and generated contract artifacts
+# -----------------------------------------------------------------------------
+*.bin
+*.elf
+*.map
+*.hex
+*.uf2
+
+ota-signing/
+firmware-signing/
+
+# Normative firmware input and raw API exports are maintained locally. Reviewed
+# project documentation and generated client types remain tracked elsewhere.
+docs/OtaManager.md
+OTA-Service API.json
+
+# -----------------------------------------------------------------------------
+# Deployment-specific operator material
+# -----------------------------------------------------------------------------
+.local/
+*.local.md
+OPERATIONS.local.md
+INSTANCE.md
+
+# -----------------------------------------------------------------------------
+# Local-only development guidance and history
+# -----------------------------------------------------------------------------
+CHANGELOG.md
+docs/CHANGELOG.md

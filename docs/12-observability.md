@@ -1,0 +1,374 @@
+# OTA Management Platform — Observability
+
+## Operational evidence follow-up — 2026-10-16
+
+[OPERATIONAL-EVIDENCE.md](OPERATIONAL-EVIDENCE.md) defines the current source/retention matrix, capture diagnostics and investigation runbook. Exception logs now retain class and bounded frame locations without message/SQL/source-line dumps; request logs use route templates. The reviewed device edge access log excludes raw paths/queries/credentials. These safe logs replace production Uvicorn access logging.
+
+Recording scope/checks are an independent on-demand snapshot at authenticated `GET /communications/diagnostics`, not a per-poll probe or a dependency-health promise. The dashboard shows Not checked until Run checks; no automatic diagnostic retry or refresh occurs. Ordinary evidence reads handle their own database failures. All browser reads are scoped to mounted, visible, online screens; hidden/offline transitions abort in-flight reads, and below-fold related evidence also pauses outside the viewport. Public shell and dependency probes run every 30 seconds only while eligible. This does not replace server-side always-on monitoring. See the shared specification for exact cache, history and multi-window boundaries.
+
+## Objectives
+
+Administrators must be able to determine:
+
+- Is the platform healthy?
+- Are devices checking?
+- Are devices receiving updates?
+- Are authentication failures increasing?
+- Are firmware downloads failing?
+- Is MinIO healthy?
+- Is PostgreSQL healthy?
+
+---
+
+# Structured Logging
+
+Application logs must be structured.
+
+Recommended fields:
+
+```text
+timestamp
+level
+service
+request_id
+device_id
+device_serial
+release_id
+action
+status
+duration_ms
+error_code
+```
+
+Sensitive credentials must never be logged.
+
+---
+
+# Request ID
+
+Every API request should have a request ID.
+
+The request ID should appear in:
+
+- logs
+- error responses
+- audit correlation where useful
+
+---
+
+# Device Events
+
+Events emitted by the device-facing OTA surface:
+
+| Event                                                                      | Level   | Fields                                               | Meaning                                                                                                                                                                                         |
+| -------------------------------------------------------------------------- | ------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `manifest_served`                                                          | INFO    | device_id, device_serial, release_id, version, bytes | A signed manifest was returned for this device.                                                                                                                                                 |
+| `manifest_no_offer`                                                        | INFO    | device_id, device_serial, reason                     | No offer: path mismatch, inactive device, OTA disabled, no eligible release, or nothing newer than the known version.                                                                           |
+| `device_auth_failed`                                                       | INFO    | code                                                 | `401`: a missing or invalid credential.                                                                                                                                                         |
+| `device_auth_forbidden`                                                    | WARNING | code                                                 | `403`: unknown serial, MAC mismatch, or a disabled/retired device — the cases that lock the device out for 24 hours, so they are warnings.                                                      |
+| `device_rate_limited`                                                      | WARNING | device_id, device_serial, surface                    | `429`; the poll was skipped, no lockout.                                                                                                                                                        |
+| `firmware_download_served`                                                 | INFO    | device_id, release_id, version, bytes                | The complete expected response body was emitted. This is a delivery, not an installation.                                                                                                       |
+| `firmware_stream_failed`                                                   | ERROR   | —                                                    | MinIO stream failed before the expected byte count was delivered; the client must reject the incomplete body.                                                                                   |
+| `firmware_stream_size_mismatch` / `firmware_stream_exceeded_expected_size` | ERROR   | expected, actual/emitted                             | The object-store stream disagreed with the published artifact length; completion is not recorded.                                                                                               |
+| `firmware_download_completion_record_failed`                               | ERROR   | device_id, release_id                                | The full response was emitted but its completion event could not be persisted; this must be reconciled operationally.                                                                           |
+| `firmware_not_entitled`                                                    | INFO    | device_id, device_serial, reason                     | The device passed authentication but is not entitled to the binary.                                                                                                                             |
+| `firmware_release_not_found`                                               | INFO    | device_id, version, filename                         | The requested release is not deliverable for this device type.                                                                                                                                  |
+| `ota_transient_failure`                                                    | ERROR   | code, device_id                                      | A `5xx` was returned so the device retries: storage read failed, an object was missing, or a stored length disagreed with the signed size.                                                      |
+| `storage_read_failed`                                                      | ERROR   | storage_key, device_id                               | MinIO read failure for a manifest or artifact.                                                                                                                                                  |
+| `stored_artifact_size_mismatch`                                            | ERROR   | release_id, expected, actual                         | The stored object no longer matches the signed size; the bytes were refused rather than served.                                                                                                 |
+| `published_release_has_no_manifest` / `published_release_has_no_artifact`  | ERROR   | release_id                                           | Data-integrity defect on a published release.                                                                                                                                                   |
+| `published_release_has_invalid_version`                                    | ERROR   | release_id                                           | A published release whose version the device could not compare; it is skipped as a candidate instead of breaking every poll.                                                                    |
+| `firmware_blocked_by_policy`                                               | INFO    | device_id, device_serial, version                    | The governing policy excludes this version, so the bytes were withheld.                                                                                                                         |
+| `policy_conflict_at_decision_time`                                         | ERROR   | device_id, scope                                     | Two equal-priority policies at one scope reached a decision. It fails closed (`404 POLICY_BLOCKED`); the configuration is only supposed to get here if rows were written outside the admin API. |
+| `audit_event`                                                              | INFO    | action, resource_type                                | An administrative change was recorded, including every policy and administrator change.                                                                                                         |
+| `admin_login_failed`                                                       | WARNING | address                                              | A credential attempt failed. The attempted email is in the audit trail; the password is nowhere.                                                                                                |
+| `admin_login_rate_limited`                                                 | WARNING | address                                              | The login limit was hit; the attempt never reached password verification.                                                                                                                       |
+| `admin_session_rejected`                                                   | INFO    | code, path                                           | A session cookie was missing, expired, tampered with, or revoked. Deliberately not a warning: an expired tab is not an incident.                                                                |
+| `admin_csrf_rejected`                                                      | WARNING | path, method                                         | An unsafe request carried cookies but no matching CSRF header. Worth noticing: it is either a broken client or a forged request.                                                                |
+| `admin_capability_denied`                                                  | WARNING | admin_id, role, capability, path                     | An authenticated administrator attempted something their role does not grant.                                                                                                                   |
+| `admin_rate_limited`                                                       | WARNING | admin_id                                             | The per-administrator API limit was hit.                                                                                                                                                        |
+| `admin_bootstrapped`                                                       | INFO    | admin_id                                             | The deployment command created the first administrator.                                                                                                                                         |
+
+`firmware_download_served` means that the server completed its response
+stream. It must not be labelled as installed, updated, or booted without a
+future authenticated device report.
+
+Response bodies never carry these reasons on `401`/`403`; the detail is in the
+log only, so the endpoint cannot be used to enumerate enrolled serial numbers.
+On `404`, `429`, and `503` the same reason is additionally exposed in the
+non-contractual `X-OTA-Reason` response header, which describes only the caller
+itself and is what a field engineer sees with a single `curl`.
+
+---
+
+# Firmware Events
+
+Track:
+
+```text
+uploaded
+manifest_parsed
+manifest_rejected
+validated
+published
+deprecated
+archived
+```
+
+A rejected manifest (version/md5/size/url mismatch, or a failed signature) is a
+security-relevant event, not a form-validation error: it means the platform was
+handed a pairing that no device could verify, or an attempt to publish a URL the
+backend did not compose.
+
+---
+
+# Update Metrics
+
+The system should eventually expose:
+
+```text
+manifest_requests_total
+manifest_auth_failures_total
+manifest_no_offer_total            # labelled by reason
+manifest_path_mismatch_total       # provisioning defects in the field
+firmware_downloads_total
+firmware_download_failures_total
+updates_by_version
+devices_by_known_firmware_version
+publish_rejections_total           # labelled by rejection code
+```
+
+`manifest_path_mismatch_total` deserves its own series: a mismatch is never a
+fleet threat, it is always a provisioning or configuration defect, and it should
+page a human rather than be buried in an authorization-failure count.
+
+---
+
+# Device Health
+
+Dashboard health categories may be derived from:
+
+```text
+last_manifest_check_at
+```
+
+Example:
+
+```text
+Recently checked
+Stale
+Very stale
+Never checked
+```
+
+Thresholds must be configurable.
+
+---
+
+# Health Endpoints
+
+The API exposes two health surfaces with different audiences: a public one for
+routers and monitoring, and an internal one for operators.
+
+## Public surface — one route per hostname
+
+Nginx marks each proxied probe with `X-OTA-Role`, so the same `/health` route
+answers for all three hostnames. The body is always exactly one of two JSON
+strings:
+
+```http
+GET https://api.<domain>/health   ->  {"status":"ok"} or {"status":"unavailable"}
+GET https://cdn.<domain>/health   ->  same
+GET https://ota.<domain>/health   ->  same
+```
+
+| Hostname       | Role  | Dependencies checked |
+| -------------- | ----- | -------------------- |
+| `api.<domain>` | `api` | PostgreSQL           |
+| `cdn.<domain>` | `cdn` | MinIO                |
+| `ota.<domain>` | `ota` | PostgreSQL + MinIO   |
+
+No dependency name, no version, no hostname, and no error string ever appears in
+the public body: it is served from the Internet and carries exactly as much
+information as a load balancer needs. A request without the `X-OTA-Role` header
+— a direct loopback call or a container healthcheck — is treated as `ota`, the
+strictest role.
+
+The dashboard SPA is deliberately not part of the API's role check. Nginx
+serves the frontend, not the API, so the API cannot truthfully report on it;
+`ota-health public` checks the dashboard URL from `deploy/health.toml` instead.
+Consequently, losing MinIO does not make the manifest host report itself
+unhealthy, and a broken dashboard does not make the administrative API report
+itself unhealthy.
+
+## Internal surface — loopback only
+
+Nginx does not proxy these routes. They are reachable only from the host or from
+inside the Compose network, and they are allowed to name their dependencies:
+
+```http
+GET /health/live    ->  {"status":"ok"}
+GET /health/ready   ->  {"status":"ok","dependencies":{"database":"ok","object_storage":"ok"}}
+GET /health/detail  ->  {"status":"ok","environment":"production","app_version":"...",
+                         "dependencies":{"database":"ok","object_storage":"ok"}}
+```
+
+They are what the container healthcheck and an operator over SSH use directly.
+
+The `ota-health` CLI reads `deploy/health.toml` and is the project's single
+source of truth for reachability checks; the deploy script, CI, and an operator
+over SSH all use it. Its exit codes are `0` (all probes ok), `1` (at least one
+probe unavailable), and `2` (the CLI could not run). The `internal` subcommand
+runs from a one-off container on the private Compose network and is what the
+deploy script uses for its readiness gate; the `public` subcommand runs on a
+workstation or on the CI runner, where public DNS is available, and is what an
+operator uses to confirm the deployment from outside. Neither replaces the
+other: the internal view has detail a public probe cannot safely expose, and
+the public view proves reachability that the container cannot observe.
+
+Liveness checks application process health.
+
+Readiness checks required dependencies.
+
+---
+
+# Dependency Health
+
+Readiness may verify:
+
+```text
+PostgreSQL
+MinIO
+```
+
+For capacity monitoring, correlate active and waiting PostgreSQL connections
+with the configured per-process pool maximum
+(`DATABASE_POOL_SIZE + DATABASE_MAX_OVERFLOW`), API request latency, MinIO
+stream errors, process memory, and firmware bytes served. A production capacity
+claim requires a representative concurrent-device/download load test; unit
+tests do not establish throughput.
+
+The exact behavior must avoid causing cascading failures.
+
+---
+
+# Audit vs Application Logs
+
+The current 2026-10-16 redesign adds durable device exchanges as an independent third model, governed by `DEVICE-COMMUNICATIONS.md`. Device request/response history is stored in PostgreSQL and survives API restart. Routine no-offer 404 responses do not create generic request-failed warnings. The process buffer below remains secondary diagnostics only, not device history.
+
+These are different.
+
+Application logs describe runtime behavior.
+
+Audit logs describe security-sensitive administrative actions.
+
+Audit logs are PostgreSQL-backed and append-only through the service API.
+The administrative list and last-24-hour summary require `audit:read`.
+New records include the validated request UUID where a request context exists.
+Reviewed structured details are allowlisted on both write and read, including
+legacy rows. Device lifecycle, OTA flag, and known-version actions retain
+before/after values; missing historical snapshots are not reconstructed.
+
+## Bounded authenticated monitoring
+
+`/api/v1/admin/monitoring/status` and `/events` provide a small operational
+view without a new collector, queue, dependency, or schema migration. They use
+distinct `monitoring:read` / `logs:read` capabilities, currently super-admin
+only, and `Cache-Control: no-store`. Public `/health` remains minimal; internal
+`/health/live`, `/health/ready`, and `/health/detail` remain private.
+
+The operational buffer retains at most 500 approved events per API process.
+It copies only reviewed static application event codes, severity, time, UUID
+correlation, and a small numeric-field allowlist. It also records sanitized
+`request_failed` events for HTTP 4xx/5xx outside the probe/monitoring paths.
+Raw messages, exception text, tracebacks, headers, URLs, IP addresses, database
+connections, and object-store keys are never copied into this browser surface.
+The source logger's configured level still controls which application events
+are emitted; HTTP failure sampling does not depend on the logging level.
+
+The separate metric buffer retains at most 500 completed response-header
+samples, excluding health and monitoring reads. `observed_since` describes
+the oldest retained sample. p95 uses nearest rank over these durations and is
+null for an empty sample. Timing stops when the middleware receives response
+headers; it does not measure streamed-body completion or end-to-end network
+latency. Counts are sample counts, not lifetime counters or 24-hour totals.
+
+Both buffers reset on restart and are process-local: multiple workers or
+replicas can return different snapshots. They are not a durable log archive
+or a substitute for private structured server logs. Audit records remain
+durable and independent. For long-term aggregation, use the existing private
+logs and deployment monitoring rather than interpreting this buffer as an SLA.
+
+Dependency failures are reduced to unavailable, never raw errors. A failing
+database can prevent session verification; a timeout/error must be shown as
+unknown by the dashboard. Health polls every 30 seconds with a ten-second
+client deadline. Device communications and service events refresh automatically
+every five seconds in a visible tab; admin audit refreshes every ten seconds.
+History browsing holds position and inspection holds the communications table
+while collecting arrivals. Failed reads are marked stale/unknown.
+
+---
+
+# Error Classification
+
+Errors should be classified:
+
+```text
+AUTHENTICATION
+AUTHORIZATION
+VALIDATION
+STORAGE
+DATABASE
+NETWORK
+FIRMWARE
+INTERNAL
+```
+
+---
+
+# Dashboard Operational Reporting
+
+Dashboard should eventually provide:
+
+```text
+Device count
+Firmware distribution
+Recent checks
+Recent failures
+Update success/failure
+Authentication failures
+Stale devices
+```
+
+Firmware distribution must label the version source and must not present
+server-served downloads as installed fleet state. The server also cannot push
+or force OTA; freshness is determined by device polling.
+
+The fleet view should also surface provisioning defects, because they are
+invisible in firmware-state reporting:
+
+```text
+devices whose configured OTA_ONLINE_URL does not match the derived manifest URL
+fleet split by device type code / platform, since that is the OTA path dimension
+devices that have never successfully checked in
+```
+
+A device with a wrong provisioned URL reports no error the platform can see; it
+simply never updates. That makes it a first-class "requires attention" category,
+not a log line.
+
+---
+
+# Future Observability
+
+Future enhancements may add:
+
+```text
+Prometheus
+Grafana
+OpenTelemetry
+centralized log aggregation
+alerting
+```
+
+These are not required for initial deployment.

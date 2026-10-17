@@ -1,0 +1,700 @@
+# OTA Management Platform — API Specification
+
+## Operational evidence additions — 2026-10-16
+
+The communications summary endpoint, resource linkage filters, server-resolved period, request_rejected outcome and recording diagnostics are defined in [OPERATIONAL-EVIDENCE.md](OPERATIONAL-EVIDENCE.md) and runtime OpenAPI. Missing history schema returns 503 communication_history_unavailable. Existing OTA wire routes are unchanged. Administrative evidence/error responses are no-store.
+
+Recording diagnostics are now explicitly requested through `GET /api/v1/admin/communications/diagnostics` (`logs:read`, no-store, read-only RecordingHealth snapshot). Routine history/summary/status reads no longer run the recording probe; legacy capture/recording fields are optional/null. A completed diagnostic can report unavailable/degraded; an actual history read failure remains HTTP 503, never a false empty history. Dependency health no longer implies recording health. See the shared operational specification for lifecycle, compatibility and rollout.
+
+> Status: current prose reference. Runtime-generated OpenAPI and the implementation are authoritative for current HTTP behavior; `PRD.md` and `IMPLEMENTATION-PLAN.md` govern target changes.
+
+## API Structure
+
+The API is divided into:
+
+```text
+Admin API
+OTA Device API
+```
+
+Each public hostname serves a single role:
+
+```text
+api.<your-domain>
+    /api/v1/firmware/{device_type}/{platform}/manifest.json   device manifest
+    /health                                                   public reachability probe (role: api)
+
+cdn.<your-domain>
+    /firmware/{device_type}/{platform}/v{version}/{filename}  firmware binary
+    /health                                                   public reachability probe (role: cdn)
+
+ota.<your-domain>
+    /api/v1/admin/*                                           administrative API
+    /<your-dashboard-path>/                                   frontend SPA
+    /                                                         Nginx 404
+    /health                                                   public reachability probe (role: ota)
+```
+
+The `/health` route on each hostname returns only `{"status":"ok"}` or
+`{"status":"unavailable"}`. It names no dependency, no version, and no
+hostname: Nginx marks the proxied request with `X-OTA-Role`, and the API
+checks only the dependencies that role needs. The internal probes
+(`/health/live`, `/health/ready`, `/health/detail`) are reachable only on
+loopback and are not proxied by Nginx; from the Internet they answer `404`.
+See `docs/12-observability.md` for the two surfaces and
+`docs/18-operations.md` for the `ota-health` CLI that probes them.
+
+The device-facing route shape is fixed by the firmware contract; the complete
+URL model is `docs/16-update-path-and-publication.md`. The administrative API is
+served only on `ota.<your-domain>`; the device hostnames answer every
+administrative path with `404`.
+
+The probes are unauthenticated by design — a probe has no session, and requiring
+one would mean an unhealthy instance cannot be detected. They never name a host,
+a credential, or an error string. Liveness deliberately does not check a
+dependency, so a slow database cannot cause a restart loop; readiness returns
+`503` so a load balancer removes the instance instead of routing to it.
+
+---
+
+# Admin API
+
+Every administrative endpoint requires an authenticated session, a capability,
+and — for unsafe methods — a matching CSRF header. Authentication is not
+something a route opts into: each endpoint carries the dependency for the
+capability it needs, so an unauthenticated route cannot be added by omission.
+
+Relationship to the device API: `/api/v1/admin/*` is for people,
+`/api/v1/firmware/*` and `/firmware/*` are for devices. They share no
+credentials and no error semantics — an admin `403` is a permission problem,
+while a device `403` silences a controller for 24 hours. The two surfaces are
+also separated at the hostname: the administrative API is served only on
+`ota.<your-domain>`, and the device hostnames do not route it.
+
+## Admin authentication
+
+```http
+POST /api/v1/admin/auth/login
+POST /api/v1/admin/auth/logout
+GET  /api/v1/admin/auth/me
+POST /api/v1/admin/auth/password
+GET  /api/v1/admin/admins
+POST /api/v1/admin/admins
+POST /api/v1/admin/admins/{id}/active
+POST /api/v1/admin/admins/{id}/role
+```
+
+```json
+{ "email": "admin@example.com", "password": "..." }
+```
+
+A successful login sets two cookies and returns:
+
+```json
+{
+  "admin": {
+    "id": 1,
+    "email": "admin@example.com",
+    "role": "super_admin",
+    "is_active": true,
+    "last_login_at": "...",
+    "created_at": "...",
+    "capabilities": ["admins:manage", "audit:read", "dashboard:read"]
+  },
+  "csrf_token": "...",
+  "csrf_header": "X-CSRF-Token",
+  "expires_at": "..."
+}
+```
+
+```text
+ota_admin_session   HttpOnly, SameSite=Lax, Secure in production, Path=/
+ota_admin_csrf      readable by the client, same attributes
+```
+
+The access token is never returned in the body, so a script cannot copy it out
+of a response; the cookie is the only carrier. Browser clients echo `csrf_token`
+in the `X-CSRF-Token` header on every `POST`/`PATCH`/`DELETE`.
+
+Status codes:
+
+```text
+200  success
+401  unauthenticated (no session, expired, tampered, or revoked) /
+     invalid_credentials on login — the same body for every failure reason
+403  csrf_failed, insufficient_capability, invalid_password
+409  admin_email_exists, last_super_admin, password_unchanged
+422  invalid_email, weak_password, plus schema validation
+429  rate_limited
+```
+
+`POST /auth/logout` also succeeds when the session is already gone: a client
+must always be able to discard an `HttpOnly` cookie it can no longer invalidate.
+A password change ends every other session immediately, and the last active
+`SUPER_ADMIN` cannot be deactivated or demoted.
+
+---
+
+## Devices
+
+```http
+GET    /api/v1/admin/devices
+POST   /api/v1/admin/devices
+GET    /api/v1/admin/devices/{id}
+PATCH  /api/v1/admin/devices/{id}
+DELETE /api/v1/admin/devices/{id}
+POST   /api/v1/admin/devices/{id}/status
+POST   /api/v1/admin/devices/{id}/ota-enabled
+GET    /api/v1/admin/devices/{id}/tokens
+POST   /api/v1/admin/devices/{id}/token/issue
+POST   /api/v1/admin/devices/{id}/token/rotate
+POST   /api/v1/admin/devices/{id}/token/revoke
+POST   /api/v1/admin/devices/{id}/firmware-version
+GET    /api/v1/admin/devices/{id}/update-attempts
+```
+
+Token issue and rotation responses expose the plaintext exactly once. Newly
+generated tokens are 12 ASCII alphanumeric characters (lowercase, uppercase,
+and digits), with a hard compatibility ceiling of 24 characters for device
+entry.
+
+`firmware-version` records the version an administrator asserts the device is
+running, or clears it when it is unknown. Because the OTA request carries no
+running version, this is the only input to the "nothing newer than the known
+version" rule, and it is stored with provenance (`admin_asserted` today;
+`device_reported` is reserved for a future authenticated telemetry contract).
+A served download never writes it.
+
+`PATCH` changes serial, raw eFuse MAC, or Device Type only through audited
+identity safeguards. `POST .../status` enforces the lifecycle state machine.
+Retirement disables OTA. A retired device can only be restored to `disabled`;
+activation and OTA enablement remain separate explicit actions. `DELETE` is an
+exceptional purge: it requires `devices:purge` and succeeds only for a
+provisioned device with no update-attempt or policy history. Its issued and
+revoked token credentials are deleted in the same database operation.
+Operational removal uses retirement instead.
+
+Device responses include `can_update_identity` and `can_purge`. These fields are
+the server-evaluated action eligibility for the current retained state; clients
+hide the corresponding action when the value is false and still treat a `409`
+as authoritative if state changes after the read.
+
+`update-attempts` returns the server-observed OTA events for one device, newest
+first: what was offered and what was delivered. None of them is evidence that a
+firmware installed or booted.
+
+---
+
+# Device Types
+
+```http
+GET    /api/v1/admin/device-types
+POST   /api/v1/admin/device-types
+GET    /api/v1/admin/device-types/{id}
+PATCH  /api/v1/admin/device-types/{id}
+POST   /api/v1/admin/device-types/{id}/active
+DELETE /api/v1/admin/device-types/{id}
+```
+
+`code` and `platform` are the two path-bearing fields: they become
+`{device_type}` and `{platform}` in every OTA URL for that type. Both are
+validated on creation (`^[a-z0-9]+(-[a-z0-9]+)*$`) and are immutable once the
+device type has a registered device or a published release.
+
+Creation validates the URL length budget and reserves version space:
+`len(code) + len(platform) <= 29`.
+
+Deletion succeeds only when no device, release, or policy references the type.
+Deactivation preserves references and prevents new operational use.
+Device type responses include `can_delete`, which reflects that dependency
+check at read time. Clients offer permanent deletion only when it is true.
+
+A device type response exposes the derived public URLs so operators can
+provision devices without constructing them by hand:
+
+```json
+{
+  "code": "bcs-controller-v1",
+  "platform": "esp32-s3",
+  "manifest_url": "https://<your-api-host>/api/v1/firmware/bcs-controller-v1/esp32-s3/manifest.json",
+  "firmware_path_template": "https://<your-cdn-host>/firmware/bcs-controller-v1/esp32-s3/v{version}/{filename}"
+}
+```
+
+---
+
+# Firmware
+
+```http
+GET    /api/v1/admin/firmware/releases
+POST   /api/v1/admin/firmware/releases
+GET    /api/v1/admin/firmware/releases/{id}
+GET    /api/v1/admin/firmware/releases/{id}/manifest
+POST   /api/v1/admin/firmware/releases/{id}/draft
+POST   /api/v1/admin/firmware/releases/{id}/publish
+POST   /api/v1/admin/firmware/releases/{id}/deprecate
+POST   /api/v1/admin/firmware/releases/{id}/archive
+POST   /api/v1/admin/firmware/releases/{id}/restore
+```
+
+`GET .../manifest` returns the exact stored manifest bytes that a device will
+be served, so an operator can compare them with what the release pipeline
+produced without downloading from the delivery host.
+
+Creating a release takes the binary and the manifest together
+(`multipart/form-data`), because the platform parses the manifest, records its
+values, and derives the storage layout from it:
+
+```text
+device_type_id      required   selects code + platform
+version             required   "2.6.1"
+artifact            required   the firmware binary
+manifest            required   the signed manifest.json
+name / release_notes optional
+```
+
+The administrator never supplies MD5, size, SHA-256, or the download URL: the
+first three are computed from the bytes, and the URL is composed from the
+validated parameters. An uploaded manifest whose `version`, `md5`, or `size`
+disagrees with the binary, or whose `url` is not the composed canonical URL, is
+rejected — see "Publication Procedure" in
+`docs/16-update-path-and-publication.md` for the procedure and rejection codes.
+
+An archived release retains its version, artifact, and signed manifest. `restore`
+moves only an archived release to `draft`; it never publishes the release. A
+second upload of the same device type and version remains a `409 version_exists`
+because signed release material is immutable and cannot be overwritten.
+
+Release responses expose the derived artifact and manifest URLs and storage
+keys, plus the manifest field set that will actually be served.
+
+An unavailable private object store returns `503` with domain code
+`storage_unavailable` and `X-Request-ID`. The response never includes the MinIO
+endpoint, bucket credentials, SDK error, or stack trace.
+
+`PATCH /api/v1/admin/firmware/releases/{id}` changes only `name` and
+`release_notes`, and only before publication. Version, device type, binary,
+manifest, hashes, size, URL, and published content are immutable.
+
+---
+
+# Firmware Artifact
+
+```http
+POST   /api/v1/admin/firmware/artifacts
+GET    /api/v1/admin/firmware/artifacts/{id}
+```
+
+The artifact upload creates the MinIO object and calculates:
+
+```text
+size
+md5
+sha256
+```
+
+---
+
+# Policies
+
+```http
+GET    /api/v1/admin/policies
+POST   /api/v1/admin/policies
+GET    /api/v1/admin/policies/{id}
+PATCH  /api/v1/admin/policies/{id}
+DELETE /api/v1/admin/policies/{id}
+POST   /api/v1/admin/policies/{id}/active
+POST   /api/v1/admin/policies/{id}/restore
+GET    /api/v1/admin/policies/{id}/devices
+```
+
+A policy is created with `scope` (`global`, `device_type`, `device`),
+`policy_type` (`pin`, `range`, `disable`), the scope target, an optional
+`priority`, and an optional `starts_at`/`ends_at` window:
+
+```json
+{
+  "name": "Hold the fleet at 2.5.8",
+  "scope": "global",
+  "policy_type": "pin",
+  "target_version": "2.5.8",
+  "priority": 0,
+  "starts_at": null,
+  "ends_at": null
+}
+```
+
+Incoherent definitions are `422` (`policy_target_required`,
+`policy_version_forbidden`, `policy_range_invalid`, `policy_window_invalid`,
+`policy_scope_target_required`, `policy_scope_target_forbidden`,
+`invalid_version`). A second active policy with the same scope target and the
+same priority over an overlapping window is `409 policy_conflict`: the platform
+refuses to guess an outcome the data cannot decide ("Update Policy Resolution" in
+`docs/15-implementation-decisions.md`).
+
+`PATCH` edits the definition in place; `scope`, `policy_type`, `device_id`, and
+`device_type_id` are not accepted there (unknown fields are rejected, not
+ignored). `is_active` is changed through `POST .../active`, and
+`GET /api/v1/admin/policies/{id}/devices` returns the devices the policy reaches
+— its blast radius — with `total`, `page`, and `page_size`.
+
+`DELETE` archives a policy by disabling it and setting `archived_at`. Archived
+policies are excluded from the default collection and resolution, cannot be
+edited or activated, and remain stored for audit and historical explanation.
+`GET .../policies?archived=true` lists them. `POST .../policies/{id}/restore`
+returns an archived policy to the inactive state for review; activation remains
+a separate conflict-checked action. Repeating archive is idempotent; restoring a
+non-archived policy returns `409 policy_not_archived`.
+
+---
+
+# Update Preview
+
+```http
+GET /api/v1/admin/devices/{id}/update-decision
+```
+
+This endpoint uses the same `UpdateDecisionService` as the real OTA endpoint, and
+the device's own device type supplies the path identity, so it cannot disagree
+with what the device was told.
+
+Example response:
+
+```json
+{
+  "device_id": 10432,
+  "update_available": true,
+  "reason": "PINNED_VERSION",
+  "target_version": "2.5.8",
+  "release_id": 6,
+  "firmware_url": "https://<your-cdn-host>/firmware/bcs-controller-v1/esp32-s3/v2.5.8/Controller.ino.bin",
+  "policy_id": 3,
+  "policy_scope": "global",
+  "policy_name": "Hold the fleet at 2.5.8",
+  "known_version": "2.5.7",
+  "known_version_source": "admin_asserted",
+  "explanation": "The policy “Hold the fleet at 2.5.8” pins this device to 2.5.8."
+}
+```
+
+`known_version` is always accompanied by `known_version_source`, because no
+current OTA request can report a running version. The endpoint is read-only: it
+never writes `last_manifest_check_at` or an `update_attempts` row.
+
+---
+
+# Dashboard
+
+```http
+GET /api/v1/admin/dashboard/summary
+GET /api/v1/admin/dashboard/firmware-distribution
+GET /api/v1/admin/dashboard/update-activity
+GET /api/v1/admin/dashboard/device-health
+GET /api/v1/admin/dashboard/devices-needing-attention
+```
+
+All of them are `dashboard:read` and read-only. `summary` returns device counts
+by lifecycle state, `ota_disabled_devices`, active device types, published
+releases, active policies, docs/polls in the last 24 hours, and
+`devices_needing_attention`.
+
+Firmware distribution returns one row per device type, version, and provenance —
+including the row where `version` is `null`, which means _no version was ever
+asserted_, not "unknown because we forgot". Update activity lists the recent
+server-observed attempts and counts offers and downloads for 24 hours and 7 days.
+
+`device-health` counts three categories, each with the explanation the dashboard
+shows:
+
+```text
+NEVER_SEEN            registered > 1 day ago, has never authenticated
+STALE_CHECK           active, no manifest check in 7 days
+DOWNLOAD_UNCONFIRMED  a binary was served > 2 days ago and the known version is
+                      still not that version
+```
+
+The third is the platform's honest form of "the update did not take": the device
+never reports a successful boot, so the server can only report that it handed out
+a version and that what it knows about the device disagrees. A device matching
+several categories is counted once in the summary total.
+
+---
+
+# Audit
+
+```http
+GET /api/v1/admin/audit-events
+GET /api/v1/admin/audit-events/summary
+```
+
+Both routes require `audit:read` and return `Cache-Control: no-store`. A `VIEWER`
+can inspect the fleet but not the security history. The list is newest first,
+with a typed `items`, `total`, `page`, `page_size` envelope. Filters are exact
+`action`, `actor`, `resource_type`, `resource_id`, and UUID `request_id`, plus
+inclusive `since` / `until` timestamps with explicit timezone. Naive timestamps
+and reversed windows return `422 audit_timezone_required` /
+`audit_window_invalid`. Pagination defaults to 50 and is capped at 200.
+
+Each record has `actor` (not `actor_email`) and a structured, nullable `detail`.
+Reviewed detail fields are allowlisted on write and read, including historical
+rows; arbitrary prose, storage keys, credentials, and secrets are omitted.
+New request-backed records carry a validated UUID `detail.request_id`.
+Device lifecycle, OTA flag, and known-version assertions include safe
+`before` / `after` snapshots; older records may not have these snapshots.
+Failed login records retain the attempted email and known failure code, never
+the password. Existing records are not rewritten by read-time sanitization.
+
+The summary returns `since`, `until`, `total`, `actors`, `failed_logins`, and
+hourly `buckets` (`started_at`, `count`) for the rolling last 24 hours across
+the whole trail, independent of list filters or pagination. Zero-filled UTC
+hour buckets include the two partial boundary hours (normally 25 buckets).
+Failed logins count only `admin_login_failed`, not an inferred failure outcome.
+
+## Durable device communication API (2026-10-16)
+
+`GET /api/v1/admin/communications`, `/{id}`, and `/export` require `logs:read` and `Cache-Control: no-store`. Filters: numeric serial prefix, manifest/firmware kind, outcome, aware inclusive since/until, UUID request ID, ID snapshot ceiling and newest/oldest/slowest order. Pages default to 50 and cap at 100; the envelope includes items/total/page/page_size/snapshot/since. Missing detail is 404; invalid windows/dates/vocabulary are 422.
+
+`GET /communications/export?format=csv|json` applies the same filters; `GET /audit-events/export` independently requires `audit:read` and audit filters/read sanitization. Both return filename/content/media_type/exported/snapshot. Above 1,000 matches they return `422 export_limit_exceeded`, with no silently truncated file. CSV strings are spreadsheet-formula escaped. Monitoring `/events` also accepts `source=system` for service faults only. See `DEVICE-COMMUNICATIONS.md` for lifecycle, data minimization, retention and operator acceptance.
+
+## Authenticated operational monitoring
+
+```http
+GET /api/v1/admin/monitoring/status
+GET /api/v1/admin/monitoring/events
+```
+
+These read-only routes require `monitoring:read` and `logs:read`, respectively;
+currently only `SUPER_ADMIN` receives these capabilities. Both are `no-store`.
+The status response includes `ok` / `degraded`, check time, app version,
+database/object-storage `ok` / `unavailable`, process uptime, observed-since
+time, sampled request count, sampled 5xx count, sampled response p95, and
+capacity. Empty-sample p95 is `null`. The response describes one API process,
+not fleet health, host resources, uptime SLA, or confirmed OTA installation.
+
+Events accept `level` (`INFO`, `WARNING`, `ERROR`), UUID `request_id`, `page`,
+and `page_size` (default 25, maximum 100). The envelope includes retention
+capacity and process start time. Items expose only a static reviewed event
+code, severity, timestamp, sequence ID, optional request UUID, and reviewed
+numeric context. There are no raw message, traceback, address, or path fields.
+The latest 500 events and 500 request samples are memory-only and reset on
+restart; see `12-observability.md` for measurement and retention limits.
+
+No public or private health-probe routing changes are required. If the database
+is unavailable, session authorization itself may fail before a detailed status
+can be returned; the client must show unknown, not a previous green result.
+
+---
+
+# OTA Manifest Request
+
+```http
+GET https://<your-api-host>/api/v1/firmware/{device_type}/{platform}/manifest.json
+```
+
+Required headers:
+
+```text
+X-Device-Serial
+X-Device-Mac
+X-Device-Token
+```
+
+This is the URL provisioned on devices as `OTA_ONLINE_URL`.
+
+---
+
+# OTA Manifest Response
+
+```http
+GET https://<your-api-host>/api/v1/firmware/{device_type}/{platform}/manifest.json
+```
+
+This is the URL provisioned on each device in NVS as `OTA_ONLINE_URL`. It serves
+the stored, signed manifest **verbatim** — it is never re-rendered or re-signed
+per request — so what is audited is literally what the device received.
+
+```text
+Content-Type: application/json
+Content-Length: byte length of the stored manifest
+Cache-Control: no-store
+no Transfer-Encoding, no Location
+```
+
+A `200` is returned only when an actual eligible release exists for that device.
+Otherwise the response is the no-offer `404` described under "OTA Firmware".
+
+---
+
+# OTA Firmware
+
+```http
+GET https://<your-cdn-host>/firmware/{device_type}/{platform}/v{version}/{filename}
+```
+
+Required headers:
+
+```text
+X-Device-Serial
+X-Device-Mac
+X-Device-Token
+```
+
+This URL is never provisioned on a device; the device requests the absolute
+URL from the signed manifest's `url` field.
+
+```text
+Content-Type: application/octet-stream
+Content-Length: exactly the artifact size, equal to the manifest `size`
+Cache-Control: no-store
+no Transfer-Encoding, no Location
+```
+
+The release is resolved by exact version and filename, and must be `PUBLISHED`
+or `DEPRECATED`: a deprecated release is no longer offered, but a device already
+holding a signed manifest can finish that download, and pinned devices may still
+use it ("Deprecated" in `docs/06-firmware-management.md`). Entitlement is re-decided on
+every download, so a signed manifest is never an authorization grant for the
+binary.
+
+Both OTA endpoints compare the path's `{device_type}`/`{platform}` against the
+authenticated device's own device type and return the no-offer response on
+mismatch. Neither endpoint may return a redirect, and neither may be cached by an
+intermediary. The complete path and serving model is
+`docs/16-update-path-and-publication.md`.
+
+---
+
+# Authentication Errors
+
+```text
+401
+```
+
+means invalid authentication.
+
+```text
+403
+```
+
+is reserved for an unknown/MAC-mismatched device or a known device that is
+disabled or retired. It immediately locks the firmware's automatic polling for
+24 hours.
+
+```text
+404
+```
+
+is the no-offer response, including a request whose path names a different
+device type or platform than the authenticated device's own.
+
+The distinction is required because of the current device behavior.
+
+The complete OTA status matrix is normative in
+`docs/15-implementation-decisions.md`: 404 is the no-offer response and 429
+is rate limiting; neither must be replaced with 403.
+
+```text
+429
+```
+
+is rate limiting, applied per authenticated device identity after
+identification. It never locks a device out: the device treats it as a
+non-retryable response for that poll and tries again at its normal interval.
+
+```text
+5xx
+```
+
+is used for every transient backend failure — an unreachable object store, a
+missing object, a stored length that disagrees with the signed size — so the
+firmware's retry and backoff sequence can operate. A backend defect must never
+surface as `403`, because that silences automatic checks for 24 hours.
+
+On `404`, `429`, and `503`, the reason is also returned in the non-contractual
+`X-OTA-Reason` header (`NO_ELIGIBLE_RELEASE`, `DEVICE_TYPE_MISMATCH`,
+`OTA_DISABLED`, `NO_UPDATE`, `POLICY_BLOCKED`, `RELEASE_NOT_FOUND`,
+`RATE_LIMITED`, ...). It is never present on `401` or `403`, so it cannot be used
+to probe which serial numbers are enrolled.
+
+A policy that excludes a version also `404`s its binary (`POLICY_BLOCKED`). That
+is deliberate: withholding only the offer would leave the version installable
+from a manifest the device already holds ("Update Policy Resolution" in
+`docs/15-implementation-decisions.md`).
+
+---
+
+# Error Format
+
+Admin API errors should use a consistent structured format.
+
+Example:
+
+```json
+{
+  "error": {
+    "code": "DEVICE_NOT_FOUND",
+    "message": "Device was not found",
+    "request_id": "..."
+  }
+}
+```
+
+OTA endpoints must preserve the HTTP semantics expected by the firmware.
+
+---
+
+# Pagination
+
+Administrative list endpoints shall use pagination.
+
+Recommended:
+
+```text
+page
+page_size
+```
+
+or cursor pagination if scale requires it.
+
+---
+
+# Filtering
+
+Device endpoints should support filters for:
+
+```text
+device_type
+firmware_version
+status
+ota_enabled
+```
+
+Firmware endpoints should support:
+
+```text
+device_type
+version
+status
+```
+
+Device-type and firmware filters are always the first-class dimension of the
+firmware catalog: releases, artifacts, manifests, and OTA paths are all scoped
+to a device type.
+
+---
+
+# API Versioning
+
+Breaking API changes require a new version.
+
+Existing OTA device contract must not silently change.
+
+---
+
+# OpenAPI
+
+FastAPI shall generate OpenAPI documentation.
+
+Administrative APIs should be documented through OpenAPI.
+
+OTA protocol requirements must additionally exist as a human-readable contract document.
