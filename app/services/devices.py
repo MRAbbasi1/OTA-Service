@@ -195,7 +195,11 @@ class DeviceService:
         if not device_type.is_active:
             raise DeviceError("device_type_inactive")
 
-        mac_normalized = normalize_mac(raw_efuse_mac.strip()) if raw_efuse_mac and raw_efuse_mac.strip() else None
+        mac_normalized = (
+            normalize_mac(raw_efuse_mac.strip())
+            if raw_efuse_mac and raw_efuse_mac.strip()
+            else None
+        )
         serial_taken = self._session.execute(
             select(Device).where(Device.serial_number == serial_number)
         ).scalar_one_or_none()
@@ -212,7 +216,9 @@ class DeviceService:
             device_type_id=device_type_id,
             serial_number=serial_number,
             raw_efuse_mac=mac_normalized,
-            network_mac=normalize_mac(network_mac.strip()) if network_mac and network_mac.strip() else None,
+            network_mac=(
+                normalize_mac(network_mac.strip()) if network_mac and network_mac.strip() else None
+            ),
             ota_enabled=ota_enabled,
         )
         self._session.add(device)

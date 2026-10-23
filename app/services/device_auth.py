@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -58,10 +59,8 @@ class DeviceAuthService:
         # If omitted, or not configured on device, authentication succeeds via serial and token.
         # If provided, validate/normalize format, but any mismatch does NOT cause failure.
         if mac and mac.strip():
-            try:
+            with contextlib.suppress(DeviceError):
                 normalize_mac(mac.strip())
-            except DeviceError:
-                pass
 
         if device.status in (DeviceStatus.DISABLED, DeviceStatus.RETIRED):
             raise AuthError(status.HTTP_403_FORBIDDEN, "device_disabled")
