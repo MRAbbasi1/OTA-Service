@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 SerialHeader = Annotated[str | None, Header(alias="X-Device-Serial")]
 MacHeader = Annotated[str | None, Header(alias="X-Device-Mac")]
 TokenHeader = Annotated[str | None, Header(alias="X-Device-Token")]
+FirmwareVersionHeader = Annotated[str | None, Header(alias="X-Device-Firmware-Version")]
 
 # A device neither caches nor follows a redirect, and every OTA response is
 # generated for one authenticated device, so no OTA response may be stored by an
@@ -76,8 +77,8 @@ _DEVICE_AUTH_RESPONSES: dict[int | str, dict[str, Any]] = {
     status.HTTP_401_UNAUTHORIZED: {"description": "Invalid or missing device credentials."},
     status.HTTP_403_FORBIDDEN: {
         "description": (
-            "Unknown serial number, raw eFuse MAC mismatch, or a disabled or retired "
-            "device. The device applies an immediate 24-hour lockout."
+            "Unknown serial number, or a disabled or retired device. "
+            "The device applies an immediate 24-hour lockout."
         )
     },
     status.HTTP_404_NOT_FOUND: {"description": "No offer for this device."},
@@ -217,6 +218,7 @@ def get_manifest(
     x_device_serial: SerialHeader = None,
     x_device_mac: MacHeader = None,
     x_device_token: TokenHeader = None,
+    x_device_firmware_version: FirmwareVersionHeader = None,
     session: Session = Depends(get_session),
     storage: ObjectStorage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
@@ -236,6 +238,7 @@ def get_manifest(
             serial=x_device_serial,
             mac=x_device_mac,
             token=x_device_token,
+            firmware_version=x_device_firmware_version,
         )
         return _write(result, observer)
     except Exception:
@@ -258,6 +261,7 @@ def get_firmware(
     x_device_serial: SerialHeader = None,
     x_device_mac: MacHeader = None,
     x_device_token: TokenHeader = None,
+    x_device_firmware_version: FirmwareVersionHeader = None,
     session: Session = Depends(get_session),
     storage: ObjectStorage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
@@ -281,6 +285,7 @@ def get_firmware(
             serial=x_device_serial,
             mac=x_device_mac,
             token=x_device_token,
+            firmware_version=x_device_firmware_version,
         )
         return _write(result, observer)
     except Exception:

@@ -36,8 +36,13 @@ Required fields:
 ```text
 Device Type
 Serial Number
-Raw eFuse MAC
 Authentication Token
+```
+
+Optional fields:
+
+```text
+Raw eFuse MAC
 ```
 
 Choosing the device type is an OTA-relevant decision, not just a label: the

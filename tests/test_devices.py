@@ -113,10 +113,13 @@ class TestAuthentication:
             DeviceAuthService(db_session).authenticate("1", EFUSE_MAC, "tok")
         assert exc.value.http_status == 403
 
-    def test_mac_mismatch_403(self, db_session, device_id, token) -> None:
-        with pytest.raises(AuthError) as exc:
-            DeviceAuthService(db_session).authenticate(str(SERIAL), "AA:BB:CC:DD:EE:FF", token)
-        assert exc.value.http_status == 403
+    def test_mac_mismatch_still_authenticates(self, db_session, device_id, token) -> None:
+        device = DeviceAuthService(db_session).authenticate(str(SERIAL), "AA:BB:CC:DD:EE:FF", token)
+        assert device.id == device_id
+
+    def test_missing_mac_still_authenticates(self, db_session, device_id, token) -> None:
+        device = DeviceAuthService(db_session).authenticate(str(SERIAL), None, token)
+        assert device.id == device_id
 
     def test_invalid_token_401(self, db_session, device_id, token) -> None:
         with pytest.raises(AuthError) as exc:

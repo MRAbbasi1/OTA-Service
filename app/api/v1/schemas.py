@@ -71,8 +71,20 @@ class DeviceCreate(BaseModel):
 
     device_type_id: int
     serial_number: int = Field(gt=0)
-    raw_efuse_mac: str = Field(min_length=12, max_length=17)
+    raw_efuse_mac: str | None = None
     ota_enabled: bool = True
+
+    @field_validator("raw_efuse_mac", mode="before")
+    @classmethod
+    def _validate_raw_mac(cls, value: object) -> str | None:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if isinstance(value, str):
+            val = value.strip()
+            if len(val) < 12 or len(val) > 17:
+                raise ValueError("raw_efuse_mac must be 12-17 characters if provided")
+            return val
+        return str(value)
 
 
 class DeviceIdentityUpdate(BaseModel):
@@ -80,7 +92,19 @@ class DeviceIdentityUpdate(BaseModel):
 
     device_type_id: int | None = None
     serial_number: int | None = Field(default=None, gt=0)
-    raw_efuse_mac: str | None = Field(default=None, min_length=12, max_length=17)
+    raw_efuse_mac: str | None = None
+
+    @field_validator("raw_efuse_mac", mode="before")
+    @classmethod
+    def _validate_raw_mac(cls, value: object) -> str | None:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if isinstance(value, str):
+            val = value.strip()
+            if len(val) < 12 or len(val) > 17:
+                raise ValueError("raw_efuse_mac must be 12-17 characters if provided")
+            return val
+        return str(value)
 
 
 class DeviceRead(BaseModel):
@@ -98,7 +122,7 @@ class DeviceRead(BaseModel):
     device_type_code: str
     device_type_platform: str
     serial_number: int
-    raw_efuse_mac: str
+    raw_efuse_mac: str | None
     network_mac: str | None
     status: DeviceStatus
     ota_enabled: bool

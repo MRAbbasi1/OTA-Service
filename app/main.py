@@ -86,6 +86,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     parameters=parameters,
                     method=request.method,
                     observe=request.app.state.monitoring.record_capture,
+                    firmware_version=request.headers.get("X-Device-Firmware-Version"),
                 )
                 request.state.communication_observer = observer
             try:

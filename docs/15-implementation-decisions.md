@@ -54,14 +54,13 @@ before cutover and either migrated or supported explicitly.
 The database stores its canonical decimal string (`^[1-9][0-9]*$`); leading
 zeroes are rejected at registration and request validation.
 
-`raw_efuse_mac` is stored and compared as uppercase colon-separated hex:
+`raw_efuse_mac` is optional. When present, it is stored and normalized as uppercase colon-separated hex:
 
 ```text
 XX:XX:XX:XX:XX:XX
 ```
 
-Request values are normalized to this representation before lookup. The value
-is the raw eFuse MAC sent by the device client agent, never the Ethernet network MAC.
+When sent in requests, it is normalized to this representation. The serial number and token are the authoritative credentials for authentication; eFuse MAC validation is optional and non-fatal (mismatches or missing values do not fail the request). The value is the raw eFuse MAC sent by the device client agent, never the Ethernet network MAC.
 
 ---
 
@@ -81,7 +80,7 @@ The OTA authentication/entitlement response matrix is:
 
 | Condition                                                                                   | Response | Device consequence                                                 |
 | ------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------ |
-| Unknown serial or known serial with mismatched raw eFuse MAC                                | 403      | Immediate 24-hour automatic-check lockout                          |
+| Unknown serial number                                                                       | 403      | Immediate 24-hour automatic-check lockout                          |
 | Known device with invalid, inactive, expired, or revoked token                              | 401      | Three consecutive failures cause a 24-hour lockout                 |
 | Known device in `DISABLED` or `RETIRED` lifecycle state                                     | 403      | Immediate 24-hour automatic-check lockout                          |
 | Authenticated device requesting a path whose `{device_type}` or `{platform}` is not its own | 404      | No retry/backoff; no lockout; recovers as soon as NVS is corrected |
@@ -111,9 +110,7 @@ release is actually allowed for that device.
 
 ## Firmware Version Knowledge and Update Attempts
 
-The current OTA GET contract sends no running firmware version and includes no
-post-reboot callback. Therefore the backend must not infer that an installation
-succeeded merely because it served a binary.
+The OTA GET contract supports the `X-Device-Firmware-Version` header. When present and the request is successfully authenticated against primary hardware credentials (serial, eFuse MAC, and token), the backend automatically tracks the device's true running version:
 
 The device record keeps these distinct values:
 
@@ -125,10 +122,7 @@ last_download_served_version nullable
 last_download_served_at nullable
 ```
 
-`known_firmware_version` is shown as “known firmware version” and its source
-must be shown to administrators. In the current protocol it can only be
-admin-asserted; `DEVICE_REPORTED` is reserved for a future authenticated
-telemetry contract. Serving a download updates only `last_download_served_*`.
+`known_firmware_version` represents the device's known firmware version. With automatic detection enabled, authenticated requests automatically update this field with source `DEVICE_REPORTED` and the current timestamp (`known_firmware_observed_at`), eliminating the requirement for manual operator assertion in the dashboard. In the dashboard UI, manual version entry has been replaced with this automatic detection display (with a reset capability). If a legacy device does not send this header, the server continues operating safely without breaking compatibility. Serving a download updates only `last_download_served_*`.
 
 `UpdateAttempt` records server-observed states only:
 

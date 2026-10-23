@@ -43,7 +43,6 @@ class DeviceAuthService:
         token: str | None,
     ) -> Device:
         serial_value = self._require(serial, "missing_serial")
-        mac_value = self._require(mac, "missing_mac")
         token_value = self._require(token, "missing_token")
 
         if not re.fullmatch(r"[0-9]{1,19}", serial_value.strip()) or int(serial_value) > 2**63 - 1:
@@ -54,12 +53,16 @@ class DeviceAuthService:
         if device is None:
             # Unknown device: positively refused (docs/05-device-management.md §6).
             raise AuthError(status.HTTP_403_FORBIDDEN, "unknown_device")
-        try:
-            normalized_mac = normalize_mac(mac_value)
-        except DeviceError:
-            raise AuthError(status.HTTP_403_FORBIDDEN, "mac_mismatch") from None
-        if normalized_mac != device.raw_efuse_mac:
-            raise AuthError(status.HTTP_403_FORBIDDEN, "mac_mismatch")
+
+        # eFuse MAC validation is optional:
+        # If omitted, or not configured on device, authentication succeeds via serial and token.
+        # If provided, validate/normalize format, but any mismatch does NOT cause failure.
+        if mac and mac.strip():
+            try:
+                normalize_mac(mac.strip())
+            except DeviceError:
+                pass
+
         if device.status in (DeviceStatus.DISABLED, DeviceStatus.RETIRED):
             raise AuthError(status.HTTP_403_FORBIDDEN, "device_disabled")
 

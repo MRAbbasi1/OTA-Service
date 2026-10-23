@@ -47,6 +47,7 @@ class CommunicationRecorder:
         parameters: dict[str, str],
         observe: Callable[[str], None] | None = None,
         method: str = "GET",
+        firmware_version: str | None = None,
     ) -> None:
         self.factory = factory
         self.started = time.perf_counter()
@@ -63,19 +64,22 @@ class CommunicationRecorder:
             if mac and re.fullmatch(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}", mac)
             else None
         )
+        req_info: dict[str, Any] = {
+            "method": method,
+            "route": (
+                "/api/v1/firmware/{device_type}/{platform}/manifest.json"
+                if kind == "manifest"
+                else "/firmware/{device_type}/{platform}/v{version}/{filename}"
+            ),
+            "serial": claimed,
+            "mac": safe_mac,
+            "token_present": token_present,
+            "parameters": {key: safe_segment(value) for key, value in parameters.items()},
+        }
+        if firmware_version is not None:
+            req_info["firmware_version"] = firmware_version
         self.detail: dict[str, Any] = {
-            "request": {
-                "method": method,
-                "route": (
-                    "/api/v1/firmware/{device_type}/{platform}/manifest.json"
-                    if kind == "manifest"
-                    else "/firmware/{device_type}/{platform}/v{version}/{filename}"
-                ),
-                "serial": claimed,
-                "mac": safe_mac,
-                "token_present": token_present,
-                "parameters": {key: safe_segment(value) for key, value in parameters.items()},
-            },
+            "request": req_info,
             "events": [{"event": "request_received", "at": datetime.now(UTC).isoformat()}],
         }
         try:

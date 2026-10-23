@@ -52,15 +52,16 @@ sequenceDiagram
 
 | Credential | Source | Purpose |
 | :--- | :--- | :--- |
-| **`X-Device-Serial`** | Provisioned device serial number (e.g. `1000000000000001`) | Device identity record in the database. |
-| **`X-Device-Mac`** | Factory eFuse MAC (`ESP.getEfuseMac()`, lower 6 bytes) | Silicon-level hardware anchor (`AA:BB:CC:DD:EE:FF`). Prevents network MAC spoofing. |
+| **`X-Device-Serial`** | Provisioned device serial number (e.g. `1000000000000001`) | Device identity record in the database. Primary auth anchor. |
+| **`X-Device-Mac`** | Factory eFuse MAC (`ESP.getEfuseMac()`, lower 6 bytes) | Optional silicon hardware anchor (`AA:BB:CC:DD:EE:FF`). Non-fatal if omitted or mismatched. |
 | **`X-Device-Token`** | 256-bit cryptographically secure random token | Device authentication secret. Plaintext is only known to the device; the server stores only a SHA-256 digest. |
+| **`X-Device-Firmware-Version`** | Controller firmware version (e.g. `2.6.3`) | Reports running version to backend; tracked automatically as `device_reported` for update evaluation. |
 
 ---
 
 ## 3. Communication Method (Wire Protocol)
 
-Every request initiated by a device must include all three authentication headers over HTTPS.
+Every request initiated by a device must include authentication headers over HTTPS.
 
 ### 3.1. Manifest Request
 
@@ -73,6 +74,7 @@ Every request initiated by a device must include all three authentication header
   X-Device-Serial: 1000000000000001
   X-Device-Mac: AA:BB:CC:11:22:33
   X-Device-Token: <256-bit-token>
+  X-Device-Firmware-Version: 2.6.3
   ```
 
 #### Response: `200 OK` (New Version Available)
@@ -122,11 +124,11 @@ The device verifies this string against the `signature` using its embedded ECDSA
 | Scenario / Use Case | HTTP Status | Device Response & Recommended Action |
 | :--- | :---: | :--- |
 | **New compatible release available** | `200 OK` | Parse manifest, verify signature, stream binary, validate MD5, apply update and restart. |
-| **Fleet / Device up to date** | `404 Not Found` | No update offered. Normal state. Device sleeps until the next scheduled poll interval (e.g. 6 hours). |
+| **Fleet / Device up to date** | `404 Not Found` | `X-OTA-Reason: NO_UPDATE`. Recognized as `UP_TO_DATE` ("Firmware is up to date."), clears retries, and device safely rests until next scheduled check. |
 | **Updates frozen (Policy Disable)** | `404 Not Found` | Fleet policy temporarily halts updates. No offer given. Device retries at normal interval. |
-| **Version pinned to running version** | `404 Not Found` | Device is already running the pinned version. No offer given. |
+| **Version pinned to running version** | `404 Not Found` | Device is already running the pinned version (`NO_UPDATE`). Recognized as `UP_TO_DATE`. |
 | **Invalid device token / credentials** | `401 Unauthorized` | Increment local failure counter. If 3 consecutive failures occur, device enters safe lockout to prevent network flooding. |
-| **Device disabled / Serial mismatch** | `403 Forbidden` | Device is deactivated by operator or MAC is mismatched. Enter 24-hour backoff lockout. |
+| **Device disabled / Serial mismatch** | `403 Forbidden` | Device is deactivated by operator or unknown serial. Enter 24-hour backoff lockout. |
 | **Rate limit exceeded** | `429 Too Many Requests` | Request rate exceeded (e.g. rapid reboot loop). Back off with jitter and retry at normal interval. |
 | **Transient server error** | `5xx Server Error` | Network or server transient error. Retry using exponential backoff with random jitter. |
 

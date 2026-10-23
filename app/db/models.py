@@ -129,7 +129,7 @@ class Device(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     device_type_id: Mapped[int] = mapped_column(ForeignKey("device_types.id"), index=True)
     serial_number: Mapped[int] = mapped_column(BigInteger, unique=True)
-    raw_efuse_mac: Mapped[str] = mapped_column(String(17), unique=True)
+    raw_efuse_mac: Mapped[str | None] = mapped_column(String(17), unique=True, nullable=True)
     network_mac: Mapped[str | None] = mapped_column(String(17))
     status: Mapped[DeviceStatus] = mapped_column(
         _enum(DeviceStatus, "device_status"),

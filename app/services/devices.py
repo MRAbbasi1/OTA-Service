@@ -187,7 +187,7 @@ class DeviceService:
         self,
         device_type_id: int,
         serial_number: int,
-        raw_efuse_mac: str,
+        raw_efuse_mac: str | None = None,
         network_mac: str | None = None,
         ota_enabled: bool = True,
     ) -> Device:
@@ -195,23 +195,24 @@ class DeviceService:
         if not device_type.is_active:
             raise DeviceError("device_type_inactive")
 
-        mac_normalized = normalize_mac(raw_efuse_mac)
+        mac_normalized = normalize_mac(raw_efuse_mac.strip()) if raw_efuse_mac and raw_efuse_mac.strip() else None
         serial_taken = self._session.execute(
             select(Device).where(Device.serial_number == serial_number)
         ).scalar_one_or_none()
         if serial_taken is not None:
             raise DeviceError("serial_exists")
-        mac_taken = self._session.execute(
-            select(Device).where(Device.raw_efuse_mac == mac_normalized)
-        ).scalar_one_or_none()
-        if mac_taken is not None:
-            raise DeviceError("mac_exists")
+        if mac_normalized is not None:
+            mac_taken = self._session.execute(
+                select(Device).where(Device.raw_efuse_mac == mac_normalized)
+            ).scalar_one_or_none()
+            if mac_taken is not None:
+                raise DeviceError("mac_exists")
 
         device = Device(
             device_type_id=device_type_id,
             serial_number=serial_number,
             raw_efuse_mac=mac_normalized,
-            network_mac=normalize_mac(network_mac) if network_mac else None,
+            network_mac=normalize_mac(network_mac.strip()) if network_mac and network_mac.strip() else None,
             ota_enabled=ota_enabled,
         )
         self._session.add(device)
@@ -263,13 +264,17 @@ class DeviceService:
             if existing is not None:
                 raise DeviceError("serial_exists")
         if "raw_efuse_mac" in changes:
-            mac = normalize_mac(str(changes["raw_efuse_mac"]))
-            existing = self._session.execute(
-                select(Device.id).where(Device.raw_efuse_mac == mac, Device.id != device_id)
-            ).scalar_one_or_none()
-            if existing is not None:
-                raise DeviceError("mac_exists")
-            changes["raw_efuse_mac"] = mac
+            raw_val = changes["raw_efuse_mac"]
+            if raw_val and str(raw_val).strip():
+                mac = normalize_mac(str(raw_val).strip())
+                existing = self._session.execute(
+                    select(Device.id).where(Device.raw_efuse_mac == mac, Device.id != device_id)
+                ).scalar_one_or_none()
+                if existing is not None:
+                    raise DeviceError("mac_exists")
+                changes["raw_efuse_mac"] = mac
+            else:
+                changes["raw_efuse_mac"] = None
         for field, value in changes.items():
             setattr(device, field, value)
         self._session.flush()

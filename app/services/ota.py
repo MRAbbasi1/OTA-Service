@@ -39,11 +39,13 @@ from app.db.models import (
     Device,
     DeviceType,
     FirmwareRelease,
+    KnownFirmwareSource,
     UpdateAttempt,
     UpdateAttemptStatus,
 )
 from app.domain.errors import DomainError
 from app.domain.update_path import validate_filename, validate_version
+from app.domain.version import parse_version
 from app.services.communications import CommunicationRecorder
 from app.services.device_auth import AuthError, DeviceAuthService
 from app.services.firmware import FirmwareService
@@ -105,6 +107,7 @@ class OtaService:
         serial: str | None,
         mac: str | None,
         token: str | None,
+        firmware_version: str | None = None,
     ) -> OtaResponse:
         try:
             device = self._auth.authenticate(serial, mac, token)
@@ -113,16 +116,31 @@ class OtaService:
 
         if self._observer:
             self._observer.authenticated(device.id)
+            if firmware_version is not None:
+                self._observer.detail["request"]["firmware_version"] = firmware_version
 
         limited = self._rate_limited(device, MANIFEST_SURFACE, MANIFEST_RATE_LIMIT)
         if limited is not None:
             return limited
 
+        now = datetime.now(UTC)
+        device.last_manifest_check_at = now
+
+        if firmware_version:
+            try:
+                parse_version(firmware_version)
+                device.current_firmware_version = firmware_version
+                device.known_firmware_source = KnownFirmwareSource.DEVICE_REPORTED.value
+                device.known_firmware_observed_at = now
+            except ValueError:
+                logger.warning(
+                    "reported_firmware_version_invalid",
+                    extra={"extra_fields": {"device_id": device.id, "version": firmware_version}},
+                )
+
         decision = self._decision.decide_for_device(
             device, requested_code=device_type, requested_platform=platform
         )
-        now = datetime.now(UTC)
-        device.last_manifest_check_at = now
 
         release = decision.release
         if self._observer:
@@ -196,6 +214,7 @@ class OtaService:
         serial: str | None,
         mac: str | None,
         token: str | None,
+        firmware_version: str | None = None,
     ) -> OtaResponse:
         try:
             device = self._auth.authenticate(serial, mac, token)
@@ -204,6 +223,8 @@ class OtaService:
 
         if self._observer:
             self._observer.authenticated(device.id)
+            if firmware_version is not None:
+                self._observer.detail["request"]["firmware_version"] = firmware_version
         limited = self._rate_limited(device, FIRMWARE_SURFACE, FIRMWARE_RATE_LIMIT)
         if limited is not None:
             return limited

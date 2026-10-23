@@ -103,11 +103,13 @@ def enroll(
 
 
 def headers(device: dict) -> dict[str, str]:
-    return {
+    h = {
         "X-Device-Serial": str(device["serial"]),
-        "X-Device-Mac": device["mac"],
         "X-Device-Token": device["token"],
     }
+    if device.get("mac") is not None:
+        h["X-Device-Mac"] = str(device["mac"])
+    return h
 
 
 def manifest_document(
@@ -299,6 +301,37 @@ class TestManifestContract:
 
         assert client.get(manifest_path(CODE, PLATFORM), headers=headers(device)).status_code == 200
 
+    def test_device_reported_firmware_version_automatically_detected_and_persisted(
+        self, client: TestClient, device: dict, published_release: dict
+    ) -> None:
+        h = headers(device)
+        h["X-Device-Firmware-Version"] = VERSION
+        response = client.get(manifest_path(CODE, PLATFORM), headers=h)
+
+        assert response.status_code == 404
+        assert response.json()["reason"] == "NO_UPDATE"
+
+        fetched = client.get(f"/api/v1/admin/devices/{device['id']}")
+        assert fetched.status_code == 200
+        assert fetched.json()["current_firmware_version"] == VERSION
+        assert fetched.json()["known_firmware_source"] == "device_reported"
+        assert fetched.json()["known_firmware_observed_at"] is not None
+
+    def test_device_reported_older_version_offers_newer_update(
+        self, client: TestClient, device: dict, published_release: dict
+    ) -> None:
+        h = headers(device)
+        h["X-Device-Firmware-Version"] = "1.0.0"
+        response = client.get(manifest_path(CODE, PLATFORM), headers=h)
+
+        assert response.status_code == 200
+        assert response.json()["version"] == VERSION
+
+        fetched = client.get(f"/api/v1/admin/devices/{device['id']}")
+        assert fetched.status_code == 200
+        assert fetched.json()["current_firmware_version"] == "1.0.0"
+        assert fetched.json()["known_firmware_source"] == "device_reported"
+
     def test_an_asserted_version_must_be_a_numeric_triple(
         self, client: TestClient, device: dict
     ) -> None:
@@ -371,14 +404,22 @@ class TestDeviceAuthentication:
         assert response.status_code == 403
         assert response.json() == {"code": "forbidden"}
 
-    def test_a_mac_mismatch_is_forbidden(
+    def test_a_mac_mismatch_still_authenticates(
         self, client: TestClient, device: dict, published_release: dict
     ) -> None:
         response = client.get(
             manifest_path(CODE, PLATFORM),
             headers=headers({**device, "mac": "7C:9E:BD:12:34:57"}),
         )
-        assert response.status_code == 403
+        assert response.status_code == 200
+
+    def test_missing_mac_header_still_authenticates(
+        self, client: TestClient, device: dict, published_release: dict
+    ) -> None:
+        h = headers(device)
+        h.pop("X-Device-Mac", None)
+        response = client.get(manifest_path(CODE, PLATFORM), headers=h)
+        assert response.status_code == 200
 
     def test_a_disabled_device_is_forbidden(
         self, client: TestClient, device: dict, published_release: dict
