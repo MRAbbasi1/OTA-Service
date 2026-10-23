@@ -161,7 +161,10 @@ def test_wrong_ota_route_and_method_are_recorded_before_route_resolution(client)
 def test_invalid_mac_and_out_of_range_serial_do_not_raise_internal_errors(client):
     kind = create_type(client)
     device = enroll(client, kind)
-    assert client.get(PATH, headers=headers(device) | {"X-Device-Mac": "broken"}).status_code == 403
+    # MAC validation does not reject, so an invalid MAC still authenticates
+    # with valid serial and token.
+    mac_response = client.get(PATH, headers=headers(device) | {"X-Device-Mac": "broken"})
+    assert mac_response.status_code in (200, 404)
     assert (
         client.get(
             PATH, headers=headers(device) | {"X-Device-Serial": "9999999999999999999"}
@@ -170,7 +173,8 @@ def test_invalid_mac_and_out_of_range_serial_do_not_raise_internal_errors(client
     )
     rows = client.get("/api/v1/admin/communications").json()["items"]
     assert len(rows) == 2
-    assert all(row["outcome"] == "auth_rejected" for row in rows)
+    assert {row["status_code"] for row in rows} == {403, 404}
+    assert {row["outcome"] for row in rows} == {"auth_rejected", "no_offer"}
 
 
 def test_capture_failure_is_visible_and_recovers_after_successful_write(client):

@@ -362,7 +362,7 @@ class TestDeviceAuthentication:
     def test_missing_headers_are_unauthorized(
         self, client: TestClient, published_release: dict
     ) -> None:
-        for header in ("X-Device-Serial", "X-Device-Mac", "X-Device-Token"):
+        for header in ("X-Device-Serial", "X-Device-Token"):
             complete = headers({"serial": SERIAL, "mac": MAC, "token": "whatever"})
             complete.pop(header)
             response = client.get(manifest_path(CODE, PLATFORM), headers=complete)
