@@ -377,8 +377,8 @@ Example response:
 }
 ```
 
-`known_version` is always accompanied by `known_version_source`, because no
-current OTA request can report a running version. The endpoint is read-only: it
+`known_version` is accompanied by `known_version_source` (`device_reported` from device
+`X-Device-Firmware-Version` telemetry, or `admin_asserted` from manual administrative setup). The endpoint is read-only: it
 never writes `last_manifest_check_at` or an `update_attempts` row.
 
 ---
@@ -491,13 +491,13 @@ can be returned; the client must show unknown, not a previous green result.
 GET https://<your-api-host>/api/v1/firmware/{device_type}/{platform}/manifest.json
 ```
 
-Required headers:
-
-```text
-X-Device-Serial
-X-Device-Mac
-X-Device-Token
-```
+Headers:
+- Required:
+  - `X-Device-Serial`: Unique integer hardware serial number
+  - `X-Device-Token`: Provisioned device secret token
+- Optional:
+  - `X-Device-Mac`: Silicon eFuse MAC address (non-fatal if omitted or mismatched)
+  - `X-Device-Firmware-Version`: Running firmware version (persisted as `device_reported`)
 
 This is the URL provisioned on devices as `OTA_ONLINE_URL`.
 
@@ -531,13 +531,13 @@ Otherwise the response is the no-offer `404` described under "OTA Firmware".
 GET https://<your-cdn-host>/firmware/{device_type}/{platform}/v{version}/{filename}
 ```
 
-Required headers:
-
-```text
-X-Device-Serial
-X-Device-Mac
-X-Device-Token
-```
+Headers:
+- Required:
+  - `X-Device-Serial`: Unique integer hardware serial number
+  - `X-Device-Token`: Provisioned device secret token
+- Optional:
+  - `X-Device-Mac`: Silicon eFuse MAC address (non-fatal if omitted or mismatched)
+  - `X-Device-Firmware-Version`: Running firmware version (persisted as `device_reported`)
 
 This URL is never provisioned on a device; the device requests the absolute
 URL from the signed manifest's `url` field.
